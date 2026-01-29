@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Daily Tracker 2.3 (Clean)</title>
+  <!-- Chart.js bleibt drin, aber wird nur für PDF genutzt -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root{
+      --bg:#0b0f14; --card:#121923; --card2:#0f1620; --text:#e8eef6; --muted:#9fb0c3;
+      --ok:#2ecc71; --warn:#f39c12; --accent:#6ea8fe; --shadow: 0 10px 30px rgba(0,0,0,.35); --r:18px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; padding:16px; color:var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      background:
+        radial-gradient(1200px 600px at 20% 0%, rgba(110,168,254,.18), transparent 50%),
+        radial-gradient(900px 500px at 85% 10%, rgba(46,204,113,.12), transparent 55%),
+        var(--bg);
+    }
+    .wrap{max-width:980px;margin:0 auto;display:grid;gap:14px}
+    header{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+    h1{margin:0;font-size:20px;letter-spacing:.2px}
+    .subtitle{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.35}
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,.03), transparent 40%), var(--card);
+      border:1px solid rgba(255,255,255,.06); border-radius:var(--r); box-shadow:var(--shadow);
+      padding:14px;
+    }
+    .row{display:grid;gap:12px}
+    @media(min-width:860px){ .row.two{grid-template-columns:1.1fr .9fr} }
+
+    .controls{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center}
+    .left{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+    .pill{
+      display:inline-flex;gap:8px;align-items:center;
+      padding:6px 10px;border-radius:999px;font-size:12px;color:var(--muted);
+      border:1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.06);
+    }
+    .btn{
+      display:inline-flex;align-items:center;gap:8px;white-space:nowrap;
+      padding:10px 12px;border-radius:12px;font-size:14px;cursor:pointer; user-select:none;
+      color:var(--text); border:1px solid rgba(110,168,254,.32); background: rgba(110,168,254,.16);
+      transition:.15s transform ease,.15s opacity ease;
+    }
+    .btn:active{transform:scale(.98);opacity:.92}
+    .btn.secondary{border-color:rgba(255,255,255,.12);background:rgba(255,255,255,.06)}
+    .btn.danger{border-color:rgba(231,76,60,.34);background:rgba(231,76,60,.14)}
+    select,input[type="text"]{
+      background:var(--card2); border:1px solid rgba(255,255,255,.08); color:var(--text);
+      padding:10px 12px;border-radius:12px;font-size:14px;outline:none;
+    }
+
+    .progress{margin-top:12px;display:grid;gap:10px}
+    .scoreLine{display:flex;justify-content:space-between;color:var(--muted);font-size:12px}
+    .barO{height:18px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.10)}
+    .barI{height:100%;width:0%;transition:width .25s ease;background:linear-gradient(90deg, rgba(46,204,113,.95), rgba(110,168,254,.95))}
+    .msg{
+      border-radius:14px;padding:10px 12px;font-size:13px;line-height:1.35;color:var(--muted);
+      border:1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.04);
+    }
+    .msg.ok{border-color:rgba(46,204,113,.35);background:rgba(46,204,113,.10);color:#bff2d2}
+    .msg.warn{border-color:rgba(243,156,18,.35);background:rgba(243,156,18,.10);color:#ffd9a1}
+
+    .grid{display:grid;gap:10px;margin-top:12px}
+    .task{
+      display:flex;justify-content:space-between;align-items:center;gap:10px;
+      padding:12px;border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);
+    }
+    .tname{font-weight:650;font-size:14px;letter-spacing:.2px}
+    .thint{margin-top:2px;color:var(--muted);font-size:12px}
+    input[type="checkbox"]{width:22px;height:22px;accent-color:var(--accent);cursor:pointer}
+    input[type="checkbox"]:disabled{opacity:.45;cursor:not-allowed}
+
+    .planBox{
+      margin-top:12px;white-space:pre-line;line-height:1.4;font-size:12px;color:var(--muted);
+      border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);border-radius:14px;padding:10px 12px;
+    }
+
+    .customBox{
+      margin-top:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);
+      border-radius:14px;padding:12px;
+    }
+    .customHead{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
+    .inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+    .customList{display:grid;gap:8px;margin-top:10px}
+    .cItem{
+      display:flex;justify-content:space-between;align-items:center;gap:10px;
+      padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);
+    }
+    .iconBtn{
+      padding:8px 10px;border-radius:10px;font-size:12px;cursor:pointer;color:var(--text);
+      border:1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06);
+    }
+    .iconBtn:disabled{opacity:.45;cursor:not-allowed}
+
+    .table{width:100%;border-collapse:collapse;overflow:hidden;border-radius:14px;border:1px solid rgba(255,255,255,.08);margin-top:10px}
+    .table th,.table td{padding:10px 8px;font-size:12px;text-align:center;border-bottom:1px solid rgba(255,255,255,.06)}
+    .table th{color:var(--muted);font-weight:600;background:rgba(255,255,255,.03)}
+    .table td.left{text-align:left}
+    .mini{color:var(--muted);font-size:12px}
+
+    /* PRINT / PDF */
+    .print-area{display:none;}
+    @media print{
+      body{background:#fff;color:#000;padding:0}
+      .wrap{display:none}
+      .print-area{display:block;padding:18px;font-family:Arial,sans-serif}
+      .print-area h2{margin:0 0 6px 0}
+      .print-area .sub{color:#333;margin:0 0 14px 0}
+      .print-area table{width:100%;border-collapse:collapse}
+      .print-area th,.print-area td{border:1px solid #bbb;padding:8px;font-size:12px;text-align:center}
+      .print-area th{background:#f1f1f1}
+      .print-area .left{text-align:left}
+      .print-area .section{margin-top:14px;font-weight:bold}
+      .print-area ul{margin:6px 0 0 18px}
+      .print-area li{margin:3px 0;font-size:12px}
+      .print-area .charts{display:grid;gap:12px;margin-top:10px}
+      .print-area canvas{border:1px solid #bbb;border-radius:8px;padding:8px}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>✅ Daily Tracker 2.3 (Clean)</h1>
+        <div class="subtitle">
+          Keine Diagramme im Programm – <b>Diagramme erscheinen nur im PDF</b>. Freizeit ist immer anklickbar (Warnung bei &gt;2×/Woche).
+          Eigene Tasks gelten nur für den Tag, an dem du sie anlegst.
+        </div>
+      </div>
+      <div class="pill" id="todayPill">Heute: –</div>
+    </header>
+
+    <div class="card">
+      <div class="controls">
+        <div class="left">
+          <div class="pill" id="dailyStatus">Tagesziel: –</div>
+          <div class="pill" id="weekPill">Woche: –</div>
+          <div class="pill" id="weekLeisurePill">Freizeit diese Woche: –</div>
+          <div class="pill" id="planPill">Plan: –</div>
+          <div class="pill" id="extrasPill">Extras: 0/0</div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn" id="saveBtn">💾 Heute speichern</button>
+          <button class="btn secondary" id="reportBtn">📊 Monatsbericht</button>
+          <button class="btn secondary" id="pdfBtn">🧾 PDF Export</button>
+          <button class="btn danger" id="clearBtn">🗑️ Daten löschen</button>
+        </div>
+      </div>
+
+      <div class="progress">
+        <div class="scoreLine">
+          <span id="scoreText">Score: 0/4</span>
+          <span id="percentText">0%</span>
+        </div>
+        <div class="barO"><div class="barI" id="barInner"></div></div>
+        <div class="msg" id="messageBox">Hake ab, was heute dran ist. Dann „Heute speichern“.</div>
+      </div>
+
+      <div class="planBox" id="weeklyPlanBox"></div>
+
+      <div class="customBox">
+        <div class="customHead">
+          <div>
+            <div style="font-weight:700;margin-bottom:4px;">🧩 Eigene Tasks (nur heute)</div>
+            <div class="mini">Nur unter dem heutigen Datum gespeichert. In der Vergangenheit nur ansehen.</div>
+          </div>
+          <div class="pill">
+            <input type="checkbox" id="overrideToggle" style="width:18px;height:18px;">
+            <span>Ausnahme-Modus</span>
+          </div>
+        </div>
+
+        <div class="inline">
+          <input type="text" id="customInput" placeholder="z.B. Bewerbung, 30min Englisch, Termin..." style="flex:1;min-width:220px;">
+          <button class="btn secondary" id="addCustomBtn">➕ Task hinzufügen</button>
+        </div>
+
+        <div class="customList" id="customList"></div>
+        <div class="mini" id="customHint" style="margin-top:8px;"></div>
+      </div>
+    </div>
+
+    <div class="row two">
+      <div class="card">
+        <div style="font-weight:700;margin-bottom:6px;">Heute abhaken (Kern)</div>
+        <div class="mini">Ausnahme-Modus entsperrt Arbeit/Lernen/Sport. Freizeit bleibt immer verfügbar.</div>
+
+        <div class="grid">
+          <div class="task">
+            <div>
+              <div class="tname">🧑‍💼 Arbeit</div>
+              <div class="thint">Geplant: Mo–Fr</div>
+            </div>
+            <input type="checkbox" id="tWork">
+          </div>
+
+          <div class="task">
+            <div>
+              <div class="tname">📚 Lernen</div>
+              <div class="thint">Geplant: Mo + Mi + Sa + So</div>
+            </div>
+            <input type="checkbox" id="tStudy">
+          </div>
+
+          <div class="task">
+            <div>
+              <div class="tname">🏋️ Sport</div>
+              <div class="thint">Geplant: Di + Do + Sa (+ So optional)</div>
+            </div>
+            <input type="checkbox" id="tSport">
+          </div>
+
+          <div class="task">
+            <div>
+              <div class="tname">🎉 Freizeit</div>
+              <div class="thint">Jeden Tag anwählbar • Warnung: max 2×/Woche</div>
+            </div>
+            <input type="checkbox" id="tLeisure">
+          </div>
+        </div>
+
+        <div class="msg" id="leisureRuleBox" style="margin-top:12px;">Freizeit-Regel: Alles okay.</div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
+          <div style="font-weight:700;">Tages-Log (Monat)</div>
+          <select id="monthSelect"></select>
+        </div>
+
+        <table class="table" id="logTable">
+          <thead>
+            <tr>
+              <th>Datum</th><th>Arbeit</th><th>Lernen</th><th>Sport</th><th>Freizeit</th><th>Extras</th><th>Score</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+
+        <div class="mini" style="margin-top:10px;">
+          Tipp: Klick auf einen Tag lädt ihn (nur ansehen). Oben auf „Heute“ klicken → zurück.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRINT / PDF -->
+  <div class="print-area" id="printArea">
+    <h2 id="printTitle">Monatsbericht</h2>
+    <p class="sub" id="printSub"></p>
+    <div id="printSummary"></div>
+
+    <div class="section">Diagramme</div>
+    <div class="charts">
+      <canvas id="printScoreChart" height="170"></canvas>
+      <canvas id="printCategoryChart" height="170"></canvas>
+    </div>
+
+    <div class="section">Tagesübersicht</div>
+    <table id="printTable">
+      <thead>
+        <tr>
+          <th>Datum</th><th>Arbeit</th><th>Lernen</th><th>Sport</th><th>Freizeit</th><th>Extras</th><th>Score</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div class="section">Custom Tasks (nur Tage mit Extras)</div>
+    <div id="printCustomDetails"></div>
+
+    <p class="sub" style="margin-top:14px;">Erstellt mit Daily Tracker 2.3</p>
+  </div>
+
+<script>
+(() => {
+  // -----------------
+  // Helpers
+  // -----------------
+  const qs = (s) => document.querySelector(s);
+  const el = (tag, props={}) => Object.assign(document.createElement(tag), props);
+
+  const STORAGE_KEY = "dailyTrackerV23";
+
+  // UI
+  const ui = {
+    todayPill: qs("#todayPill"),
+    dailyStatus: qs("#dailyStatus"),
+    weekPill: qs("#weekPill"),
+    weekLeisurePill: qs("#weekLeisurePill"),
+    planPill: qs("#planPill"),
+    extrasPill: qs("#extrasPill"),
+    monthSelect: qs("#monthSelect"),
+    scoreText: qs("#scoreText"),
+    percentText: qs("#percentText"),
+    barInner: qs("#barInner"),
+    messageBox: qs("#messageBox"),
+    leisureRuleBox: qs("#leisureRuleBox"),
+    weeklyPlanBox: qs("#weeklyPlanBox"),
+
+    tWork: qs("#tWork"),
+    tStudy: qs("#tStudy"),
+    tSport: qs("#tSport"),
+    tLeisure: qs("#tLeisure"),
+    overrideToggle: qs("#overrideToggle"),
+
+    saveBtn: qs("#saveBtn"),
+    reportBtn: qs("#reportBtn"),
+    pdfBtn: qs("#pdfBtn"),
+    clearBtn: qs("#clearBtn"),
+
+    logBody: qs("#logTable tbody"),
+
+    customInput: qs("#customInput"),
+    addCustomBtn: qs("#addCustomBtn"),
+    customList: qs("#customList"),
+    customHint: qs("#customHint"),
+  };
+
+  // Print UI
+  const pr = {
+    title: qs("#printTitle"),
+    sub: qs("#printSub"),
+    summary: qs("#printSummary"),
+    tableBody: qs("#printTable tbody"),
+    customDetails: qs("#printCustomDetails"),
+    scoreCanvas: qs("#printScoreChart"),
+    catCanvas: qs("#printCategoryChart"),
+  };
+
+  // -----------------
+  // Plan
+  // -----------------
+  // Work: Mo-Fri
+  // Study: Mo, Mi, Sa, So
+  // Sport: Di, Do, Sa (+ So optional)
+  // Leisure: ANY DAY (warn >2/week)
+  const WEEK_PLAN = {
+    0: { work:false, study:true,  sport:true,  label:"Sonntag" },
+    1: { work:true,  study:true,  sport:false, label:"Montag" },
+    2: { work:true,  study:false, sport:true,  label:"Dienstag" },
+    3: { work:true,  study:true,  sport:false, label:"Mittwoch" },
+    4: { work:true,  study:false, sport:true,  label:"Donnerstag" },
+    5: { work:true,  study:false, sport:false, label:"Freitag" },
+    6: { work:false, study:true,  sport:true,  label:"Samstag" }
+  };
+
+  // -----------------
+  // Date utils
+  // -----------------
+  const todayStr = () => {
+    const d = new Date();
+    const tz = d.getTimezoneOffset();
+    const local = new Date(d.getTime() - tz*60000);
+    return local.toISOString().slice(0,10);
+  };
+  const ym = (d) => d.slice(0,7);
+  const parseDate = (s) => {
+    const [y,m,d] = s.split("-").map(Number);
+    return new Date(y, m-1, d);
+  };
+  const isoWeekInfo = (dateStr) => {
+    const date = parseDate(dateStr);
+    const day = (date.getDay() + 6) % 7; // Mon=0..Sun=6
+    date.setDate(date.getDate() - day + 3);
+    const firstThursday = new Date(date.getFullYear(), 0, 4);
+    const firstDay = (firstThursday.getDay() + 6) % 7;
+    firstThursday.setDate(firstThursday.getDate() - firstDay + 3);
+    const week = 1 + Math.round((date - firstThursday) / (7*24*3600*1000));
+    return { year: date.getFullYear(), week };
+  };
+  const weekKey = (dateStr) => {
+    const w = isoWeekInfo(dateStr);
+    return `${w.year}-W${String(w.week).padStart(2,"0")}`;
+  };
+
+  // -----------------
+  // Storage
+  // -----------------
+  const loadAll = () => {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+    catch { return []; }
+  };
+  const saveAll = (arr) => localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+  const getEntry = (date) => loadAll().find(e => e.date === date) || null;
+  const upsertEntry = (entry) => {
+    const arr = loadAll();
+    const i = arr.findIndex(e => e.date === entry.date);
+    if(i >= 0) arr[i] = entry; else arr.push(entry);
+    arr.sort((a,b)=>a.date.localeCompare(b.date));
+    saveAll(arr);
+  };
+  const entriesForMonth = (monthStr) => loadAll().filter(e => ym(e.date) === monthStr).sort((a,b)=>a.date.localeCompare(b.date));
+
+  // -----------------
+  // State
+  // -----------------
+  const realToday = todayStr();
+  let activeDate = realToday;
+
+  // Draft custom tasks (only relevant for today; for old days we show stored list)
+  let draftCustom = [];
+
+  // -----------------
+  // Custom tasks
+  // -----------------
+  const customStats = (tasks) => ({
+    total: tasks.length,
+    done: tasks.reduce((a,t)=>a + (t.done?1:0), 0)
+  });
+
+  const currentCustomTasks = () => {
+    if(activeDate === realToday) return draftCustom;
+    const e = getEntry(activeDate);
+    return (e && Array.isArray(e.customTasks)) ? e.customTasks : [];
+  };
+
+  const renderCustomList = () => {
+    const tasks = currentCustomTasks();
+    const isToday = (activeDate === realToday);
+
+    ui.customList.innerHTML = "";
+    const st = customStats(tasks);
+    ui.extrasPill.textContent = `Extras: ${st.done}/${st.total}`;
+
+    if(tasks.length === 0){
+      ui.customHint.textContent = isToday
+        ? "Noch keine eigenen Tasks für heute. Oben eingeben → hinzufügen."
+        : "Keine eigenen Tasks für diesen Tag.";
+      return;
+    }
+
+    ui.customHint.textContent = isToday
+      ? "Du kannst Extras abhaken und beim Speichern werden sie ins Log + PDF übernommen."
+      : "Vergangener Tag: Extras nur ansehen.";
+
+    tasks.forEach((t, idx) => {
+      const row = el("div", { className:"cItem" });
+
+      const left = el("div", { style:"display:flex;gap:10px;align-items:center;" });
+      const cb = el("input", { type:"checkbox", checked:!!t.done, disabled:!isToday });
+      cb.addEventListener("change", () => {
+        if(!isToday) return;
+        draftCustom[idx].done = cb.checked;
+        renderAll();
+      });
+
+      left.appendChild(cb);
+      left.appendChild(el("div", { textContent:t.text, style:"font-size:13px;line-height:1.25;" }));
+
+      const actions = el("div", { style:"display:flex;gap:8px;align-items:center;" });
+      const del = el("button", { className:"iconBtn", textContent:"🗑️", disabled:!isToday, title:"Task löschen" });
+      del.addEventListener("click", () => {
+        if(!isToday) return;
+        draftCustom.splice(idx,1);
+        renderAll();
+      });
+
+      actions.appendChild(del);
+      row.appendChild(left);
+      row.appendChild(actions);
+      ui.customList.appendChild(row);
+    });
+  };
+
+  const addCustomTask = () => {
+    if(activeDate !== realToday) return alert("Custom Tasks kannst du nur für heute anlegen.");
+    const text = (ui.customInput.value || "").trim();
+    if(!text) return;
+    draftCustom.push({ text, done:false });
+    ui.customInput.value = "";
+    renderAll();
+  };
+
+  // -----------------
+  // Core scoring + leisure rule
+  // -----------------
+  const coreScore = () =>
+    (ui.tWork.checked?1:0) + (ui.tStudy.checked?1:0) + (ui.tSport.checked?1:0) + (ui.tLeisure.checked?1:0);
+
+  const countLeisureInWeek = (wk, entries) =>
+    entries.filter(e => weekKey(e.date) === wk && e.leisure).length;
+
+  const updateLeisureRule = () => {
+    const entries = loadAll();
+    const wk = weekKey(activeDate);
+
+    // count saved leisure for the week, but reflect current checkbox if today/viewed day differs
+    let weekCount = countLeisureInWeek(wk, entries);
+    const saved = getEntry(activeDate);
+    const savedLeisure = saved ? !!saved.leisure : false;
+    const currentLeisure = ui.tLeisure.checked;
+
+    if(savedLeisure && !currentLeisure) weekCount -= 1;
+    if(!savedLeisure && currentLeisure) weekCount += 1;
+
+    ui.weekPill.textContent = `Woche: ${wk}`;
+    ui.weekLeisurePill.textContent = `Freizeit diese Woche: ${weekCount}/2`;
+
+    if(weekCount <= 2){
+      ui.leisureRuleBox.className = "msg ok";
+      ui.leisureRuleBox.textContent = "Freizeit-Regel: Alles okay (max. 2× pro Woche).";
+    } else {
+      ui.leisureRuleBox.className = "msg warn";
+      ui.leisureRuleBox.textContent = "⚠️ Freizeit-Regel: Du bist über 2× in dieser Woche. Wenn es passt: okay – sonst Häkchen raus.";
+    }
+  };
+
+  // -----------------
+  // Plan locks
+  // -----------------
+  const applyPlanLocks = () => {
+    const plan = WEEK_PLAN[parseDate(activeDate).getDay()];
+    const isToday = (activeDate === realToday);
+    const override = ui.overrideToggle.checked;
+
+    const setEnabled = (cb, planned) => {
+      if(!isToday){ cb.disabled = true; return; }
+      if(override){ cb.disabled = false; return; }
+      cb.disabled = !planned;
+      if(!planned) cb.checked = false;
+    };
+
+    setEnabled(ui.tWork, plan.work);
+    setEnabled(ui.tStudy, plan.study);
+    setEnabled(ui.tSport, plan.sport);
+
+    // Leisure always enabled when today; otherwise locked (view-only)
+    ui.tLeisure.disabled = !isToday;
+
+    // Custom tasks edit only today
+    ui.customInput.disabled = !isToday;
+    ui.addCustomBtn.disabled = !isToday;
+
+    const labels = [];
+    if(plan.work) labels.push("Arbeit");
+    if(plan.study) labels.push("Lernen");
+    if(plan.sport) labels.push("Sport");
+    labels.push("Freizeit (frei)");
+    ui.planPill.textContent = `Heute geplant: ${labels.join(", ")}`;
+  };
+
+  // -----------------
+  // Month select + table
+  // -----------------
+  const buildMonthSelect = () => {
+    const months = new Set(loadAll().map(e => ym(e.date)));
+    months.add(ym(realToday));
+    const sorted = Array.from(months).sort((a,b)=>b.localeCompare(a));
+    ui.monthSelect.innerHTML = "";
+    sorted.forEach(m => ui.monthSelect.appendChild(el("option", { value:m, textContent:m })));
+    ui.monthSelect.value = ym(activeDate);
+  };
+
+  const renderTable = () => {
+    const data = entriesForMonth(ui.monthSelect.value);
+    ui.logBody.innerHTML = "";
+
+    if(data.length === 0){
+      const tr = el("tr");
+      tr.innerHTML = `<td class="left" colspan="7" style="color:var(--muted);padding:14px;">Noch keine Einträge. Speichere heute deinen Tag.</td>`;
+      ui.logBody.appendChild(tr);
+      return;
+    }
+
+    data.forEach(e => {
+      const core = (e.work?1:0)+(e.study?1:0)+(e.sport?1:0)+(e.leisure?1:0);
+      const extras = Array.isArray(e.customTasks) ? e.customTasks : [];
+      const ex = customStats(extras);
+
+      const tr = el("tr", { style:"cursor:pointer" });
+      tr.title = "Klicken lädt diesen Tag (nur ansehen)";
+      tr.innerHTML = `
+        <td class="left">${e.date}</td>
+        <td>${e.work?"✅":"—"}</td>
+        <td>${e.study?"✅":"—"}</td>
+        <td>${e.sport?"✅":"—"}</td>
+        <td>${e.leisure?"✅":"—"}</td>
+        <td>${ex.total?`${ex.done}/${ex.total}`:"—"}</td>
+        <td><b>${core}/4</b></td>
+      `;
+      tr.addEventListener("click", () => { activeDate = e.date; loadDay(); });
+      ui.logBody.appendChild(tr);
+    });
+  };
+
+  // -----------------
+  // Load day
+  // -----------------
+  const loadDay = () => {
+    const dt = parseDate(activeDate);
+    const dayName = WEEK_PLAN[dt.getDay()].label;
+    ui.todayPill.textContent = `${dayName} • ${activeDate}${activeDate===realToday ? " (Heute)" : ""}`;
+
+    const entry = getEntry(activeDate);
+    if(entry){
+      ui.tWork.checked = !!entry.work;
+      ui.tStudy.checked = !!entry.study;
+      ui.tSport.checked = !!entry.sport;
+      ui.tLeisure.checked = !!entry.leisure;
+
+      draftCustom = (activeDate===realToday)
+        ? (Array.isArray(entry.customTasks) ? entry.customTasks.map(t=>({text:String(t.text||""),done:!!t.done})) : [])
+        : (Array.isArray(entry.customTasks) ? entry.customTasks : []);
+
+      ui.messageBox.className = "msg";
+      ui.messageBox.textContent = activeDate===realToday
+        ? "Heute geladen. Hake ab und speichere."
+        : "Vergangener Tag geladen (nur ansehen).";
+    } else {
+      ui.tWork.checked = ui.tStudy.checked = ui.tSport.checked = ui.tLeisure.checked = false;
+      draftCustom = [];
+      ui.messageBox.className = "msg";
+      ui.messageBox.textContent = activeDate===realToday
+        ? "Noch kein Eintrag für heute. Hake ab und speichere."
+        : "Kein Eintrag für diesen Tag.";
+    }
+
+    buildMonthSelect();
+    applyPlanLocks();
+    renderAll();
+  };
+
+  // -----------------
+  // Render all (UI)
+  // -----------------
+  const renderAll = () => {
+    // Score/progress
+    const s = coreScore();
+    const pct = Math.round((s/4)*100);
+    ui.barInner.style.width = pct + "%";
+    ui.scoreText.textContent = `Score: ${s}/4`;
+    ui.percentText.textContent = `${pct}%`;
+
+    if(pct === 100){
+      ui.dailyStatus.textContent = "Tagesziel: ✅ erreicht";
+      ui.dailyStatus.style.borderColor = "rgba(46,204,113,.35)";
+      ui.dailyStatus.style.background = "rgba(46,204,113,.10)";
+      ui.dailyStatus.style.color = "#bff2d2";
+      ui.messageBox.className = "msg ok";
+      ui.messageBox.textContent = "Stark! Tagesziel erreicht. Klick „Heute speichern“.";
+    } else {
+      ui.dailyStatus.textContent = "Tagesziel: ⏳ in Arbeit";
+      ui.dailyStatus.style.borderColor = "rgba(255,255,255,.10)";
+      ui.dailyStatus.style.background = "rgba(255,255,255,.06)";
+      ui.dailyStatus.style.color = "var(--muted)";
+      // messageBox wird in loadDay gesetzt oder bleibt
+    }
+
+    // Extras pill + list
+    renderCustomList();
+
+    // Leisure rule pill/message
+    updateLeisureRule();
+
+    // Month table (for current selected month)
+    renderTable();
+  };
+
+  // -----------------
+  // Save
+  // -----------------
+  const currentEntry = () => ({
+    date: activeDate,
+    work: ui.tWork.checked,
+    study: ui.tStudy.checked,
+    sport: ui.tSport.checked,
+    leisure: ui.tLeisure.checked,
+    customTasks: (draftCustom || []).map(t => ({ text:String(t.text||"").trim(), done:!!t.done })).filter(t => t.text.length>0),
+  });
+
+  const saveToday = () => {
+    if(activeDate !== realToday) return alert("Speichern ist nur für den heutigen Tag gedacht. Klick oben auf „Heute“.");
+    upsertEntry(currentEntry());
+    ui.messageBox.className = "msg ok";
+    ui.messageBox.textContent = "Gespeichert ✅";
+    buildMonthSelect();
+    renderAll();
+  };
+
+  // -----------------
+  // Reports
+  // -----------------
+  const calcMonthStats = (monthStr) => {
+    const data = entriesForMonth(monthStr);
+    const days = data.length;
+
+    const coreTotal = data.reduce((a,e)=>a+(e.work?1:0)+(e.study?1:0)+(e.sport?1:0)+(e.leisure?1:0),0);
+    const coreMax = days*4;
+    const corePct = coreMax ? Math.round((coreTotal/coreMax)*100) : 0;
+
+    const work = data.reduce((a,e)=>a+(e.work?1:0),0);
+    const study = data.reduce((a,e)=>a+(e.study?1:0),0);
+    const sport = data.reduce((a,e)=>a+(e.sport?1:0),0);
+    const leisure = data.reduce((a,e)=>a+(e.leisure?1:0),0);
+
+    const extrasTotal = data.reduce((a,e)=>a+((e.customTasks||[]).length),0);
+    const extrasDone = data.reduce((a,e)=>a+((e.customTasks||[]).filter(t=>t.done).length),0);
+
+    return { monthStr, data, days, coreTotal, coreMax, corePct, work, study, sport, leisure, extrasDone, extrasTotal };
+  };
+
+  const monthlyReport = () => {
+    const m = ui.monthSelect.value;
+    const st = calcMonthStats(m);
+    if(st.days === 0) return alert(`Noch keine Daten für ${m}.`);
+
+    alert(
+      `📊 Monatsbericht: ${st.monthStr}\n\n` +
+      `Tage getrackt: ${st.days}\n` +
+      `Kern: ${st.coreTotal} / ${st.coreMax} (${st.corePct}%)\n\n` +
+      `Kern (Anzahl erledigt):\n` +
+      `• Arbeit: ${st.work}\n` +
+      `• Lernen: ${st.study}\n` +
+      `• Sport: ${st.sport}\n` +
+      `• Freizeit: ${st.leisure}\n\n` +
+      `Extras (Custom Tasks): ${st.extrasDone}/${st.extrasTotal}\n`
+    );
+  };
+
+  // -----------------
+  // PDF Export with charts (ONLY in print)
+  // -----------------
+  let printCharts = { score:null, cat:null };
+
+  const buildPrintCharts = (st) => {
+    // Destroy previous if any
+    if(printCharts.score) { printCharts.score.destroy(); printCharts.score = null; }
+    if(printCharts.cat) { printCharts.cat.destroy(); printCharts.cat = null; }
+
+    const labels = st.data.map(e => e.date.slice(8,10));
+    const scores = st.data.map(e => (e.work?1:0)+(e.study?1:0)+(e.sport?1:0)+(e.leisure?1:0));
+
+    printCharts.score = new Chart(pr.scoreCanvas, {
+      type: "line",
+      data: { labels, datasets: [{ label:"Tages-Score (0–4)", data:scores, tension:0.25, fill:true, borderWidth:2, pointRadius:2 }] },
+      options: { responsive:true, maintainAspectRatio:false, scales:{ y:{ min:0, max:4, ticks:{ stepSize:1 } } } }
+    });
+
+    printCharts.cat = new Chart(pr.catCanvas, {
+      type: "bar",
+      data: {
+        labels:["Arbeit","Lernen","Sport","Freizeit"],
+        datasets:[{ label:"Anzahl erledigt", data:[st.work, st.study, st.sport, st.leisure], borderWidth:1 }]
+      },
+      options: { responsive:true, maintainAspectRatio:false }
+    });
+  };
+
+  const fillPrintArea = (st) => {
+    pr.title.textContent = `Monatsbericht • ${st.monthStr}`;
+    pr.sub.textContent = `Erstellt am ${realToday} • Tage: ${st.days} • Kern: ${st.coreTotal}/${st.coreMax} (${st.corePct}%) • Extras: ${st.extrasDone}/${st.extrasTotal}`;
+    pr.summary.innerHTML =
+      `<b>Kern (Anzahl erledigt):</b> Arbeit ${st.work} • Lernen ${st.study} • Sport ${st.sport} • Freizeit ${st.leisure}<br/>` +
+      `<b>Extras:</b> ${st.extrasDone}/${st.extrasTotal}`;
+
+    // table
+    pr.tableBody.innerHTML = "";
+    st.data.forEach(e => {
+      const core = (e.work?1:0)+(e.study?1:0)+(e.sport?1:0)+(e.leisure?1:0);
+      const ex = customStats(e.customTasks || []);
+      const tr = el("tr");
+      tr.innerHTML = `
+        <td class="left">${e.date}</td>
+        <td>${e.work ? "JA" : ""}</td>
+        <td>${e.study ? "JA" : ""}</td>
+        <td>${e.sport ? "JA" : ""}</td>
+        <td>${e.leisure ? "JA" : ""}</td>
+        <td>${ex.total ? `${ex.done}/${ex.total}` : ""}</td>
+        <td><b>${core}/4</b></td>
+      `;
+      pr.tableBody.appendChild(tr);
+    });
+
+    // custom details
+    pr.customDetails.innerHTML = "";
+    const daysWithExtras = st.data.filter(e => (e.customTasks||[]).length > 0);
+    if(daysWithExtras.length === 0){
+      pr.customDetails.innerHTML = `<div class="sub">Keine Custom Tasks in diesem Monat.</div>`;
+    } else {
+      daysWithExtras.forEach(e => {
+        const title = el("div", { className:"sub", innerHTML:`<b>${e.date}</b>` });
+        const ul = el("ul");
+        (e.customTasks||[]).forEach(t => ul.appendChild(el("li", { textContent: `${t.done?"✅":"☐"} ${t.text}` })));
+        pr.customDetails.appendChild(title);
+        pr.customDetails.appendChild(ul);
+      });
+    }
+  };
+
+  const pdfExport = async () => {
+    const m = ui.monthSelect.value;
+    const st = calcMonthStats(m);
+    if(st.days === 0) return alert(`Noch keine Daten für ${m}.`);
+
+    fillPrintArea(st);
+
+    // Build charts just-in-time; wait a tick so canvas sizes are ready
+    await new Promise(r => setTimeout(r, 50));
+    buildPrintCharts(st);
+
+    // Print
+    window.print();
+  };
+
+  // Cleanup charts after print (optional but nice)
+  window.addEventListener("afterprint", () => {
+    if(printCharts.score) { printCharts.score.destroy(); printCharts.score = null; }
+    if(printCharts.cat) { printCharts.cat.destroy(); printCharts.cat = null; }
+  });
+
+  // -----------------
+  // Plan text
+  // -----------------
+  const renderPlanBox = () => {
+    ui.weeklyPlanBox.textContent =
+`🗓️ Wochenplan (fix)
+
+Mo: Arbeit + Lernen
+Di: Arbeit + Sport
+Mi: Arbeit + Lernen
+Do: Arbeit + Sport
+Fr: Arbeit + Freizeit (Abend frei)
+Sa: Lernen (Vormittag) + Sport (Nachmittag)
+So: Lernen (light) + Sport optional
+
+Regeln:
+• Freizeit max. 2× pro Woche (Warnung)
+• Ausnahme-Modus entsperrt Arbeit/Lernen/Sport
+• Eigene Tasks gelten nur für den Tag, an dem du sie erstellst`;
+  };
+
+  // -----------------
+  // Clear all
+  // -----------------
+  const clearAll = () => {
+    if(!confirm("Wirklich ALLE gespeicherten Daten löschen?")) return;
+    localStorage.removeItem(STORAGE_KEY);
+    draftCustom = [];
+    activeDate = realToday;
+    buildMonthSelect();
+    loadDay();
+  };
+
+  // -----------------
+  // Wiring
+  // -----------------
+  [ui.tWork, ui.tStudy, ui.tSport, ui.tLeisure].forEach(cb => cb.addEventListener("change", renderAll));
+  ui.overrideToggle.addEventListener("change", () => { applyPlanLocks(); renderAll(); });
+
+  ui.addCustomBtn.addEventListener("click", addCustomTask);
+  ui.customInput.addEventListener("keydown", (e) => { if(e.key === "Enter") addCustomTask(); });
+
+  ui.saveBtn.addEventListener("click", saveToday);
+  ui.reportBtn.addEventListener("click", monthlyReport);
+  ui.pdfBtn.addEventListener("click", pdfExport);
+  ui.clearBtn.addEventListener("click", clearAll);
+
+  ui.monthSelect.addEventListener("change", renderAll);
+
+  ui.todayPill.style.cursor = "pointer";
+  ui.todayPill.title = "Klick: zurück zu Heute";
+  ui.todayPill.addEventListener("click", () => { activeDate = realToday; loadDay(); });
+
+  // -----------------
+  // Init
+  // -----------------
+  const init = () => {
+    activeDate = realToday;
+    renderPlanBox();
+    buildMonthSelect();
+    loadDay();
+  };
+  init();
+})();
+</script>
+</body>
+</html>
