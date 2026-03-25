@@ -1,585 +1,215 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-const STORAGE_KEY = "tracker_v8";
+const STORAGE_KEY = "ultimate_tracker_simple_v2";
 
-const BASE_TRAINING = {
-  monday: {
-    label: "Push (Brust/Schulter/Trizeps)",
-    tasks: ["Bankdrücken", "Schrägbankdrücken", "Schulterdrücken", "Seitheben", "Trizeps"],
-  },
-  tuesday: {
-    label: "Schwimmen (Technik)",
-    tasks: ["Aufwärmen", "Technik", "Atmung", "Angst abbauen", "Cooldown"],
-  },
-  wednesday: {
-    label: "Pull (Rücken/Bizeps)",
-    tasks: ["Latziehen", "Rudern", "Face Pulls", "Bizeps Curls", "Hammer Curls"],
-  },
-  friday: {
-    label: "Schwimmen (Ausdauer)",
-    tasks: ["Aufwärmen", "25–100m Intervalle", "Pause", "Atmung ruhig", "Cooldown"],
-  },
-  saturday: {
-    label: "Beine",
-    tasks: ["Kniebeuge oder Beinpresse", "Beinbeuger", "Beinstrecker", "Waden", "Bauch"],
-  },
-  sunday: {
-    label: "Pause",
-    tasks: ["Mobilität", "Spaziergang", "Regeneration"],
-  },
+const TRAINING_PLAN = {
+  Montag: ["Bankdrücken", "Schulter", "Trizeps"],
+  Dienstag: ["Schwimmen Technik"],
+  Mittwoch: ["Rücken", "Bizeps"],
+  Freitag: ["Schwimmen Ausdauer"],
+  Samstag: ["Beine"],
+  Sonntag: ["Pause"],
 };
 
-const LEARNING_DAYS = {
-  monday: "Lernen",
-  wednesday: "Lernen",
-  saturday: "Lernen (Nachmittag)",
-  sunday: "Lernen (light)",
-};
-
-const LEARNING_TASKS = ["Lesen", "Studium"];
-const SWIM_LEVELS = [25, 50, 75, 100, 150, 200];
-const DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-const DAY_LABELS = {
-  sunday: "Sonntag",
-  monday: "Montag",
-  tuesday: "Dienstag",
-  wednesday: "Mittwoch",
-  thursday: "Donnerstag",
-  friday: "Freitag",
-  saturday: "Samstag",
-};
-const MONTHS = [
-  "Januar", "Februar", "März", "April", "Mai", "Juni",
-  "Juli", "August", "September", "Oktober", "November", "Dezember",
-];
-
-const getKey = (d) => {
-  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-  return local.toISOString().split("T")[0];
-};
-const parseDate = (key) => {
-  const [y, m, d] = key.split("-").map(Number);
-  return new Date(y, m - 1, d);
-};
-const getDay = (key) => parseDate(key).getDay();
-const getDayKey = (key) => DAYS[getDay(key)];
-const formatDate = (key) => {
-  const d = parseDate(key);
-  return `${DAY_LABELS[getDayKey(key)]}, ${d.getDate()}. ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
-};
-const getMonthKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-const shiftMonth = (date, delta) => new Date(date.getFullYear(), date.getMonth() + delta, 1);
-
-const initial = {
-  date: getKey(new Date()),
-  month: getMonthKey(new Date()),
-  entries: {},
-  swimGoal: 200,
-};
-
-const emptyEntry = () => ({
-  training: {},
-  learning: {},
-  notes: "",
-  padel: false,
-  swimDistance: 0,
-});
-
-const normalizeEntry = (entry) => ({
-  training: entry?.training && typeof entry.training === "object" ? entry.training : {},
-  learning: entry?.learning && typeof entry.learning === "object" ? entry.learning : {},
-  notes: typeof entry?.notes === "string" ? entry.notes : "",
-  padel: !!entry?.padel,
-  swimDistance: Number.isFinite(Number(entry?.swimDistance)) ? Number(entry.swimDistance) : 0,
-});
-
-function isPadelWeek(dateKey, entries) {
-  return !!entries?.[dateKey]?.padel;
+function getTodayInfo(date = new Date()) {
+  const weekday = date.toLocaleDateString("de-DE", { weekday: "long" });
+  const formatted = date.toLocaleDateString("de-DE", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+  return { weekday, formatted };
 }
 
-function getTrainingForDay(dayKey, dateKey, entries) {
-  const base = BASE_TRAINING[dayKey];
-  const padel = isPadelWeek(dateKey, entries);
-
-  if (dayKey === "saturday" && padel) {
-    return { label: "Padel 🎾", tasks: ["Padel spielen", "Spaß haben", "Locker bewegen"] };
-  }
-  if (dayKey === "sunday" && padel) {
-    return {
-      label: "Beine (verschoben wegen Padel)",
-      tasks: ["Kniebeuge oder Beinpresse", "Beinbeuger", "Beinstrecker", "Waden", "Bauch"],
-    };
-  }
-  return base;
+function normalizeData(value) {
+  return {
+    lesen: !!value?.lesen,
+    studium: !!value?.studium,
+    swim: value?.swim ?? "",
+    notes: typeof value?.notes === "string" ? value.notes : "",
+    trainingChecks:
+      value?.trainingChecks && typeof value.trainingChecks === "object"
+        ? value.trainingChecks
+        : {},
+  };
 }
 
-const load = () => {
+function loadData() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return initial;
-    const parsed = JSON.parse(raw);
-    const entries = parsed?.entries && typeof parsed.entries === "object"
-      ? Object.fromEntries(Object.entries(parsed.entries).map(([k, v]) => [k, normalizeEntry(v)]))
-      : {};
-    return {
-      date: typeof parsed?.date === "string" ? parsed.date : initial.date,
-      month: typeof parsed?.month === "string" ? parsed.month : initial.month,
-      entries,
-      swimGoal: Number.isFinite(Number(parsed?.swimGoal)) ? Number(parsed.swimGoal) : 200,
-    };
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return normalizeData({});
+    return normalizeData(JSON.parse(raw));
   } catch {
-    return initial;
+    return normalizeData({});
   }
-};
+}
 
-const save = (d) => localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+function saveData(data) {
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeData(data)));
+}
 
 function cardStyle(extra = {}) {
   return {
-    marginTop: 20,
-    padding: 18,
     background: "#121923",
-    borderRadius: 18,
-    border: "1px solid rgba(255,255,255,0.06)",
-    boxShadow: "0 12px 30px rgba(0,0,0,0.22)",
+    padding: 16,
+    borderRadius: 16,
+    marginTop: 16,
     ...extra,
   };
 }
 
-function buttonStyle(active = false) {
+function buttonStyle() {
   return {
-    background: active ? "#22d3ee" : "#1e293b",
-    color: active ? "#0b0f14" : "white",
-    border: active ? "1px solid #22d3ee" : "1px solid #334155",
-    padding: "10px 14px",
-    borderRadius: 14,
+    padding: 10,
+    borderRadius: 10,
+    border: "none",
     cursor: "pointer",
-    fontWeight: 600,
+    background: "#22d3ee",
+    color: "#0b0f14",
+    fontWeight: 700,
   };
-}
-
-function progressBar(pct, color = "#22d3ee") {
-  return (
-    <div style={{ background: "#0f172a", borderRadius: 999, height: 10, overflow: "hidden", marginTop: 8 }}>
-      <div style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: color, height: "100%" }} />
-    </div>
-  );
-}
-
-function getTrainingProgress(dayKey, entry, dateKey, entries) {
-  const training = getTrainingForDay(dayKey, dateKey, entries);
-  if (!training) return 0;
-  const total = training.tasks.length;
-  const done = training.tasks.filter((_, i) => !!entry.training[i]).length;
-  return total ? Math.round((done / total) * 100) : 0;
-}
-
-function getLearningProgress(dayKey, entry) {
-  if (!LEARNING_DAYS[dayKey]) return 0;
-  return LEARNING_TASKS.some((_, i) => !!entry.learning[i]) ? 100 : 0;
-}
-
-function isSwimDay(dayKey) {
-  return dayKey === "tuesday" || dayKey === "friday";
-}
-
-function getSwimLevel(distance) {
-  let current = 0;
-  for (const level of SWIM_LEVELS) {
-    if (distance >= level) current = level;
-  }
-  return current;
-}
-
-function getHeatColor(trainingPct, learningPct, swimDistance) {
-  if (swimDistance > 0) return "rgba(59,130,246,0.28)";
-  if (trainingPct >= 100 && learningPct >= 100) return "rgba(34,197,94,0.30)";
-  if (trainingPct > 0) return "rgba(34,211,238,0.22)";
-  if (learningPct > 0) return "rgba(168,85,247,0.22)";
-  return null;
-}
-
-function getDashboardStats(entries) {
-  const keys = Object.keys(entries);
-  if (!keys.length) {
-    return { trackedDays: 0, trainingDays: 0, learningDays: 0, streak: 0, avgTraining: 0, avgLearning: 0, bestSwim: 0 };
-  }
-
-  const sorted = [...keys].sort();
-  let streak = 0;
-  let cursor = parseDate(getKey(new Date()));
-  while (true) {
-    const key = getKey(cursor);
-    if (entries[key]) {
-      streak += 1;
-      cursor.setDate(cursor.getDate() - 1);
-    } else {
-      break;
-    }
-  }
-
-  let trainingDays = 0;
-  let learningDays = 0;
-  let trainingSum = 0;
-  let learningSum = 0;
-  let trainingCount = 0;
-  let learningCount = 0;
-  let bestSwim = 0;
-
-  sorted.forEach((dateKey) => {
-    const dayKey = getDayKey(dateKey);
-    const entry = normalizeEntry(entries[dateKey]);
-    const trainingProgress = getTrainingProgress(dayKey, entry, dateKey, entries);
-    const learningProgress = getLearningProgress(dayKey, entry);
-    if (trainingProgress > 0 || Object.keys(entry.training).length > 0) {
-      trainingDays += 1;
-      trainingSum += trainingProgress;
-      trainingCount += 1;
-    }
-    if (LEARNING_DAYS[dayKey] && (learningProgress > 0 || Object.keys(entry.learning).length > 0)) {
-      learningDays += 1;
-      learningSum += learningProgress;
-      learningCount += 1;
-    }
-    bestSwim = Math.max(bestSwim, entry.swimDistance || 0);
-  });
-
-  return {
-    trackedDays: sorted.length,
-    trainingDays,
-    learningDays,
-    streak,
-    avgTraining: trainingCount ? Math.round(trainingSum / trainingCount) : 0,
-    avgLearning: learningCount ? Math.round(learningSum / learningCount) : 0,
-    bestSwim,
-  };
-}
-
-function getMonthReport(month, entries) {
-  const keys = Object.keys(entries).filter((k) => k.startsWith(month));
-  let trainingCompleted = 0;
-  let trainingPossible = 0;
-  let learningCompleted = 0;
-  let learningPossible = 0;
-  let notesCount = 0;
-  let swimDistanceTotal = 0;
-  let bestSwim = 0;
-
-  keys.forEach((key) => {
-    const dayKey = getDayKey(key);
-    const entry = normalizeEntry(entries[key]);
-    const training = getTrainingForDay(dayKey, key, entries);
-    if (training) {
-      trainingPossible += training.tasks.length;
-      trainingCompleted += training.tasks.filter((_, i) => !!entry.training[i]).length;
-    }
-    if (LEARNING_DAYS[dayKey]) {
-      learningPossible += LEARNING_TASKS.length;
-      learningCompleted += LEARNING_TASKS.some((_, i) => !!entry.learning[i]) ? LEARNING_TASKS.length : 0;
-    }
-    if (entry.notes.trim()) notesCount += 1;
-    swimDistanceTotal += entry.swimDistance || 0;
-    bestSwim = Math.max(bestSwim, entry.swimDistance || 0);
-  });
-
-  return {
-    trackedDays: keys.length,
-    trainingPercent: trainingPossible ? Math.round((trainingCompleted / trainingPossible) * 100) : 0,
-    learningPercent: learningPossible ? Math.round((learningCompleted / learningPossible) * 100) : 0,
-    notesCount,
-    swimDistanceTotal,
-    bestSwim,
-  };
-}
-
-function buildCalendar(month) {
-  const [year, mon] = month.split("-").map(Number);
-  const first = new Date(year, mon - 1, 1);
-  const weekday = (first.getDay() + 6) % 7;
-  const start = new Date(first);
-  start.setDate(first.getDate() - weekday);
-  return Array.from({ length: 42 }, (_, i) => {
-    const date = new Date(start);
-    date.setDate(start.getDate() + i);
-    return {
-      key: getKey(date),
-      label: date.getDate(),
-      inMonth: date.getMonth() === mon - 1,
-      isToday: getKey(date) === getKey(new Date()),
-    };
-  });
-}
-
-function exportPDF(date, dayKey, entry, entries) {
-  const training = getTrainingForDay(dayKey, date, entries);
-  const trainingHtml = training
-    ? `<h2>Training</h2><p><strong>${training.label}</strong></p><ul>${training.tasks.map((t, i) => `<li>${entry.training[i] ? "☑" : "☐"} ${t}</li>`).join("")}</ul>`
-    : `<h2>Training</h2><p>Kein Training geplant</p>`;
-  const learningHtml = LEARNING_DAYS[dayKey]
-    ? `<h2>Lernen</h2><p><strong>${LEARNING_DAYS[dayKey]}</strong></p><ul>${LEARNING_TASKS.map((t, i) => `<li>${entry.learning[i] ? "☑" : "☐"} ${t}</li>`).join("")}</ul>`
-    : `<h2>Lernen</h2><p>Kein Lernen geplant</p>`;
-  const swimHtml = isSwimDay(dayKey)
-    ? `<h2>Schwimmen</h2><p>Erreichte Distanz: <strong>${entry.swimDistance || 0} m</strong></p>`
-    : "";
-
-  const html = `
-  <html><body style="font-family: Arial; padding: 28px; color: #111827;">
-  <h1>Tagesbericht</h1>
-  <p>${formatDate(date)}</p>
-  ${trainingHtml}
-  ${learningHtml}
-  ${swimHtml}
-  <h2>Notizen</h2>
-  <p>${(entry.notes || "").replace(/</g, "&lt;")}</p>
-  </body></html>`;
-
-  const w = window.open("", "_blank", "width=900,height=700");
-  if (!w) return;
-  w.document.write(html);
-  w.document.close();
-  w.focus();
-  setTimeout(() => w.print(), 250);
 }
 
 export default function App() {
-  const [data, setData] = useState(initial);
+  const today = useMemo(() => getTodayInfo(), []);
+  const [data, setData] = useState(() => normalizeData({}));
+  const [loaded, setLoaded] = useState(false);
+  const tasks = TRAINING_PLAN[today.weekday] || [];
 
-  useEffect(() => { setData(load()); }, []);
-  useEffect(() => { save(data); }, [data]);
+  useEffect(() => {
+    setData(loadData());
+    setLoaded(true);
+  }, []);
 
-  const dayKey = getDayKey(data.date);
-  const entry = normalizeEntry(data.entries[data.date] || emptyEntry());
-  const monthDate = useMemo(() => {
-    const [y, m] = data.month.split("-").map(Number);
-    return new Date(y, m - 1, 1);
-  }, [data.month]);
-  const calendar = useMemo(() => buildCalendar(data.month), [data.month]);
-  const dashboard = useMemo(() => getDashboardStats(data.entries), [data.entries]);
-  const monthReport = useMemo(() => getMonthReport(data.month, data.entries), [data.month, data.entries]);
-  const trainingPlan = getTrainingForDay(dayKey, data.date, data.entries);
-  const trainingProgress = getTrainingProgress(dayKey, entry, data.date, data.entries);
-  const learningProgress = getLearningProgress(dayKey, entry);
-  const swimLevel = getSwimLevel(entry.swimDistance || 0);
-  const swimGoalPct = data.swimGoal ? Math.round(((entry.swimDistance || 0) / data.swimGoal) * 100) : 0;
+  const onSave = () => {
+    saveData(data);
+    window.alert("Gespeichert ✅");
+  };
 
-  const update = (changes) => {
+  const onReload = () => {
+    setData(loadData());
+  };
+
+  const toggleTraining = (index) => {
     setData((prev) => ({
       ...prev,
-      entries: {
-        ...prev.entries,
-        [prev.date]: { ...normalizeEntry(prev.entries[prev.date] || emptyEntry()), ...changes },
+      trainingChecks: {
+        ...prev.trainingChecks,
+        [index]: !prev.trainingChecks[index],
       },
     }));
   };
 
-  const toggleTraining = (i) => update({ training: { ...entry.training, [i]: !entry.training[i] } });
-  const toggleLearning = (i) => update({ learning: { ...entry.learning, [i]: !entry.learning[i] } });
+  if (!loaded) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#0b0f14", color: "white", padding: 20 }}>
+        Laden...
+      </div>
+    );
+  }
 
   return (
-    <div style={{ padding: 20, color: "white", background: "#0b0f14", minHeight: "100vh", fontFamily: "Arial, sans-serif" }}>
-      <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-        <div style={{ ...cardStyle(), marginTop: 0, background: "linear-gradient(135deg, #121923 0%, #0f2b33 100%)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-            <div>
-              <div style={{ fontSize: 12, color: "#a5f3fc", marginBottom: 8 }}>ULTIMATE TRACKER PRO</div>
-              <h1 style={{ margin: 0, fontSize: 34 }}>🔥 Ultimate Tracker</h1>
-              <button
-                onClick={() => setData((prev) => ({
-                  ...prev,
-                  entries: {
-                    ...prev.entries,
-                    [prev.date]: { ...normalizeEntry(prev.entries[prev.date] || emptyEntry()), padel: !prev.entries?.[prev.date]?.padel },
-                  },
-                }))}
-                style={{ marginTop: 10, padding: 8, borderRadius: 10, background: "#a78bfa", color: "black" }}
-              >
-                🎾 Padel Woche: {data.entries?.[data.date]?.padel ? "AN" : "AUS"}
-              </button>
-              <p style={{ color: "#cbd5e1", marginTop: 10, marginBottom: 0 }}>Training und Lernen gemeinsam, aber klar getrennt und übersichtlich.</p>
-            </div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button onClick={() => exportPDF(data.date, dayKey, entry, data.entries)} style={buttonStyle(false)}>📄 Export PDF</button>
-              <button onClick={() => setData(initial)} style={buttonStyle(false)}>↺ Reset</button>
-            </div>
-          </div>
-        </div>
+    <div
+      style={{
+        margin: 0,
+        fontFamily: "Arial, sans-serif",
+        background: "#0b0f14",
+        color: "white",
+        minHeight: "100vh",
+      }}
+    >
+      <div style={{ maxWidth: 900, margin: "auto", padding: 20 }}>
+        <h1>🔥 Ultimate Tracker</h1>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginTop: 20 }}>
-          <div style={cardStyle({ marginTop: 0 })}><div style={{ color: "#94a3b8", fontSize: 14 }}>Getrackte Tage</div><div style={{ fontSize: 32, fontWeight: 700 }}>{dashboard.trackedDays}</div></div>
-          <div style={cardStyle({ marginTop: 0 })}><div style={{ color: "#94a3b8", fontSize: 14 }}>Trainingstage</div><div style={{ fontSize: 32, fontWeight: 700 }}>{dashboard.trainingDays}</div></div>
-          <div style={cardStyle({ marginTop: 0 })}><div style={{ color: "#94a3b8", fontSize: 14 }}>Lerntage</div><div style={{ fontSize: 32, fontWeight: 700 }}>{dashboard.learningDays}</div></div>
-          <div style={cardStyle({ marginTop: 0 })}><div style={{ color: "#94a3b8", fontSize: 14 }}>Streak</div><div style={{ fontSize: 32, fontWeight: 700 }}>{dashboard.streak}</div></div>
-          <div style={cardStyle({ marginTop: 0 })}><div style={{ color: "#94a3b8", fontSize: 14 }}>Ø Training</div><div style={{ fontSize: 32, fontWeight: 700 }}>{dashboard.avgTraining}%</div>{progressBar(dashboard.avgTraining)}</div>
-          <div style={cardStyle({ marginTop: 0 })}><div style={{ color: "#94a3b8", fontSize: 14 }}>Best Swim</div><div style={{ fontSize: 32, fontWeight: 700 }}>{dashboard.bestSwim}m</div>{progressBar(Math.round((dashboard.bestSwim / data.swimGoal) * 100), "#3b82f6")}</div>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 20, marginTop: 20 }}>
-          <div style={cardStyle({ marginTop: 0 })}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <div>
-                <h2 style={{ margin: 0 }}>🗓️ Kalender</h2>
-                <div style={{ color: "#94a3b8", marginTop: 6 }}>{MONTHS[monthDate.getMonth()]} {monthDate.getFullYear()}</div>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button style={buttonStyle(false)} onClick={() => setData((p) => ({ ...p, month: getMonthKey(shiftMonth(monthDate, -1)) }))}>←</button>
-                <button style={buttonStyle(false)} onClick={() => setData((p) => ({ ...p, month: getMonthKey(new Date()), date: getKey(new Date()) }))}>Heute</button>
-                <button style={buttonStyle(false)} onClick={() => setData((p) => ({ ...p, month: getMonthKey(shiftMonth(monthDate, 1)) }))}>→</button>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 14, fontSize: 12, color: "#cbd5e1" }}>
-              <div>🟩 Training + Lernen</div>
-              <div>🟦 Schwimmen</div>
-              <div>🟪 Lernen</div>
-              <div>🟦 Training</div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8, marginTop: 16, color: "#94a3b8", fontSize: 12, textAlign: "center" }}>
-              {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((d) => <div key={d}>{d}</div>)}
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8, marginTop: 8 }}>
-              {calendar.map((cell) => {
-                const cellEntry = normalizeEntry(data.entries[cell.key] || emptyEntry());
-                const cellDayKey = getDayKey(cell.key);
-                const tPct = getTrainingProgress(cellDayKey, cellEntry, cell.key, data.entries);
-                const lPct = getLearningProgress(cellDayKey, cellEntry);
-                const active = cell.key === data.date;
-                const heat = getHeatColor(tPct, lPct, cellEntry.swimDistance || 0);
-                return (
-                  <button
-                    key={cell.key}
-                    onClick={() => setData((p) => ({ ...p, date: cell.key, month: getMonthKey(parseDate(cell.key)) }))}
-                    style={{
-                      minHeight: 88,
-                      borderRadius: 16,
-                      padding: 10,
-                      border: active ? "1px solid #22d3ee" : "1px solid rgba(255,255,255,0.08)",
-                      background: heat || (cell.inMonth ? "#111827" : "#0f172a"),
-                      color: "white",
-                      textAlign: "left",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ color: cell.isToday ? "#86efac" : "white", fontWeight: 700 }}>{cell.label}</span>
-                    </div>
-                    <div style={{ marginTop: 8, fontSize: 11, color: "#e2e8f0" }}>{DAY_LABELS[cellDayKey]}</div>
-                    {(tPct > 0 || lPct > 0 || cellEntry.swimDistance > 0) && (
-                      <div style={{ marginTop: 6, fontSize: 10 }}>
-                        {tPct > 0 ? <div style={{ color: "#67e8f9" }}>T {tPct}%</div> : null}
-                        {lPct > 0 ? <div style={{ color: "#ddd6fe" }}>L {lPct}%</div> : null}
-                        {cellEntry.swimDistance > 0 ? <div style={{ color: "#bfdbfe" }}>{cellEntry.swimDistance}m</div> : null}
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gap: 20 }}>
-            <div style={cardStyle({ marginTop: 0 })}>
-              <h2 style={{ marginTop: 0 }}>📍 Ausgewählter Tag</h2>
-              <div style={{ color: "#cbd5e1" }}>{formatDate(data.date)}</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 16 }}>
-                <div style={{ background: "#0f172a", borderRadius: 16, padding: 14 }}>
-                  <div style={{ color: "#94a3b8", fontSize: 13 }}>Training</div>
-                  <div style={{ marginTop: 6, fontWeight: 700 }}>{trainingPlan?.label || "Ruhetag"}</div>
-                  {progressBar(trainingProgress)}
-                </div>
-                <div style={{ background: "#0f172a", borderRadius: 16, padding: 14 }}>
-                  <div style={{ color: "#94a3b8", fontSize: 13 }}>Lernen</div>
-                  <div style={{ marginTop: 6, fontWeight: 700 }}>{LEARNING_DAYS[dayKey] || "Kein Lernen"}</div>
-                  {progressBar(learningProgress, "#a78bfa")}
-                </div>
-              </div>
-            </div>
-
-            <div style={cardStyle({ marginTop: 0 })}>
-              <h2 style={{ marginTop: 0 }}>🏊 Swim Level Tracking</h2>
-              {isSwimDay(dayKey) ? (
-                <>
-                  <div style={{ color: "#cbd5e1" }}>Aktuelle Distanz heute</div>
-                  <input
-                    type="number"
-                    min="0"
-                    step="25"
-                    value={entry.swimDistance || 0}
-                    onChange={(e) => update({ swimDistance: Number(e.target.value) || 0 })}
-                    style={{ marginTop: 10, width: "100%", padding: 12, borderRadius: 12, border: "1px solid #334155", background: "#0f172a", color: "white" }}
-                  />
-                  <div style={{ marginTop: 12, color: "#94a3b8", fontSize: 13 }}>Level erreicht: <strong style={{ color: "#93c5fd" }}>{swimLevel}m</strong></div>
-                  <div style={{ marginTop: 6, color: "#94a3b8", fontSize: 13 }}>Ziel: <strong style={{ color: "#bfdbfe" }}>{data.swimGoal}m</strong></div>
-                  {progressBar(swimGoalPct, "#3b82f6")}
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-                    {SWIM_LEVELS.map((level) => (
-                      <button
-                        key={level}
-                        onClick={() => update({ swimDistance: level })}
-                        style={buttonStyle((entry.swimDistance || 0) === level)}
-                      >
-                        {level}m
-                      </button>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <div style={{ color: "#94a3b8" }}>Swim-Level Tracking erscheint an Schwimmtagen (Dienstag und Freitag).</div>
-              )}
-            </div>
-
-            <div style={cardStyle({ marginTop: 0 })}>
-              <h2 style={{ marginTop: 0 }}>📈 Monatsbericht</h2>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <div><div style={{ color: "#94a3b8", fontSize: 13 }}>Getrackte Tage</div><div style={{ fontSize: 24, fontWeight: 700 }}>{monthReport.trackedDays}</div></div>
-                <div><div style={{ color: "#94a3b8", fontSize: 13 }}>Notizen</div><div style={{ fontSize: 24, fontWeight: 700 }}>{monthReport.notesCount}</div></div>
-                <div><div style={{ color: "#94a3b8", fontSize: 13 }}>Training</div><div style={{ fontSize: 24, fontWeight: 700 }}>{monthReport.trainingPercent}%</div>{progressBar(monthReport.trainingPercent)}</div>
-                <div><div style={{ color: "#94a3b8", fontSize: 13 }}>Lernen</div><div style={{ fontSize: 24, fontWeight: 700 }}>{monthReport.learningPercent}%</div>{progressBar(monthReport.learningPercent, "#a78bfa")}</div>
-                <div><div style={{ color: "#94a3b8", fontSize: 13 }}>Swim gesamt</div><div style={{ fontSize: 24, fontWeight: 700 }}>{monthReport.swimDistanceTotal}m</div></div>
-                <div><div style={{ color: "#94a3b8", fontSize: 13 }}>Bester Swim</div><div style={{ fontSize: 24, fontWeight: 700 }}>{monthReport.bestSwim}m</div></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginTop: 20 }}>
-          <div style={cardStyle({ marginTop: 0 })}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-              <h2 style={{ margin: 0 }}>🏋️ Training</h2>
-              <div style={{ color: "#67e8f9", fontWeight: 700 }}>{trainingProgress}%</div>
-            </div>
-            <p style={{ color: "#cbd5e1" }}>{trainingPlan?.label || "Heute kein geplantes Training"}</p>
-            {trainingPlan ? trainingPlan.tasks.map((task, i) => (
-              <label key={i} style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10, background: "#0f172a", padding: 12, borderRadius: 14 }}>
-                <input type="checkbox" checked={!!entry.training[i]} onChange={() => toggleTraining(i)} />
-                <span>{task}</span>
-              </label>
-            )) : <div style={{ background: "#0f172a", padding: 14, borderRadius: 14, color: "#94a3b8" }}>Ruhetag.</div>}
-          </div>
-
-          <div style={cardStyle({ marginTop: 0 })}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-              <h2 style={{ margin: 0 }}>🧠 Lernen</h2>
-              <div style={{ color: "#c4b5fd", fontWeight: 700 }}>{learningProgress}%</div>
-            </div>
-            <p style={{ color: "#cbd5e1" }}>{LEARNING_DAYS[dayKey] || "Heute kein Lernen geplant"}</p>
-            {LEARNING_DAYS[dayKey] ? LEARNING_TASKS.map((task, i) => (
-              <label key={i} style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10, background: "#0f172a", padding: 12, borderRadius: 14 }}>
-                <input type="checkbox" checked={!!entry.learning[i]} onChange={() => toggleLearning(i)} />
-                <span>{task}</span>
-              </label>
-            )) : <div style={{ background: "#0f172a", padding: 14, borderRadius: 14, color: "#94a3b8" }}>Kein Lernen heute.</div>}
-          </div>
+        <div style={cardStyle()}>
+          <h3>📅 Heute</h3>
+          <p>{today.formatted}</p>
         </div>
 
         <div style={cardStyle()}>
-          <h2 style={{ marginTop: 0 }}>📝 Tagesnotizen</h2>
-          <textarea
-            value={entry.notes}
-            onChange={(e) => update({ notes: e.target.value })}
-            placeholder="Wie lief dein Tag? Training, Lernen, Gedanken, Fortschritte ..."
-            style={{ width: "100%", minHeight: 140, background: "#0f172a", color: "white", border: "1px solid #334155", borderRadius: 16, padding: 14, fontSize: 15, boxSizing: "border-box" }}
+          <h3>🏋️ Training</h3>
+          {tasks.length === 0 ? (
+            <p>Heute kein Training geplant.</p>
+          ) : (
+            tasks.map((task, i) => (
+              <label key={task + i} style={{ display: "block", marginTop: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={!!data.trainingChecks[i]}
+                  onChange={() => toggleTraining(i)}
+                  style={{ marginRight: 8 }}
+                />
+                {task}
+              </label>
+            ))
+          )}
+        </div>
+
+        <div style={cardStyle()}>
+          <h3>🧠 Lernen</h3>
+          <label style={{ display: "block", marginTop: 8 }}>
+            <input
+              type="checkbox"
+              checked={data.lesen}
+              onChange={(e) => setData((prev) => ({ ...prev, lesen: e.target.checked }))}
+              style={{ marginRight: 8 }}
+            />
+            Lesen
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>
+            <input
+              type="checkbox"
+              checked={data.studium}
+              onChange={(e) => setData((prev) => ({ ...prev, studium: e.target.checked }))}
+              style={{ marginRight: 8 }}
+            />
+            Studium
+          </label>
+        </div>
+
+        <div style={cardStyle()}>
+          <h3>🏊 Schwimmen</h3>
+          <input
+            type="number"
+            value={data.swim}
+            onChange={(e) => setData((prev) => ({ ...prev, swim: e.target.value }))}
+            placeholder="Meter z.B. 50"
+            style={{
+              width: "100%",
+              padding: 10,
+              borderRadius: 10,
+              border: "none",
+              marginTop: 8,
+              boxSizing: "border-box",
+            }}
           />
+        </div>
+
+        <div style={cardStyle()}>
+          <h3>📝 Notizen</h3>
+          <textarea
+            value={data.notes}
+            onChange={(e) => setData((prev) => ({ ...prev, notes: e.target.value }))}
+            placeholder="Dein Tag..."
+            style={{
+              width: "100%",
+              padding: 10,
+              borderRadius: 10,
+              border: "none",
+              marginTop: 8,
+              boxSizing: "border-box",
+              minHeight: 120,
+            }}
+          />
+        </div>
+
+        <div style={cardStyle({ display: "flex", gap: 12, flexWrap: "wrap" })}>
+          <button onClick={onSave} style={buttonStyle()}>
+            💾 Speichern
+          </button>
+          <button onClick={onReload} style={buttonStyle()}>
+            🔄 Laden
+          </button>
         </div>
       </div>
     </div>
@@ -587,35 +217,21 @@ export default function App() {
 }
 
 export function __runTests__() {
-  const assert = (c, m) => { if (!c) throw new Error(m); };
+  const assert = (condition, message) => {
+    if (!condition) throw new Error(message);
+  };
 
-  assert(DAYS[1] === "monday", "day mapping");
-  assert(LEARNING_DAYS.monday === "Lernen", "learning day exists");
-  assert(getDayKey("2026-03-23") === "monday", "date to weekday should work");
+  const info = getTodayInfo(new Date("2026-03-23T12:00:00"));
+  assert(info.weekday === "Montag", "weekday should be Montag for 2026-03-23");
 
-  const entry = normalizeEntry({ training: { 0: true, 1: true }, learning: { 0: true }, notes: "ok", swimDistance: 75 });
-  assert(getTrainingProgress("monday", entry, "2026-03-23", {}) === 40, "training progress should be 40");
-  assert(getLearningProgress("monday", entry) === 100, "learning should be 100 if any task done");
-  assert(getLearningProgress("tuesday", entry) === 0, "learning on non-learning day should be 0");
-  assert(getSwimLevel(25) === 25, "swim level 25");
-  assert(getSwimLevel(130) === 100, "swim level should floor to nearest milestone");
+  const normalized = normalizeData({ lesen: 1, studium: 0, notes: 123, trainingChecks: null });
+  assert(normalized.lesen === true, "lesen should normalize to true");
+  assert(normalized.studium === false, "studium should normalize to false");
+  assert(normalized.notes === "", "notes should normalize to empty string when invalid");
+  assert(typeof normalized.trainingChecks === "object", "trainingChecks should normalize to object");
 
-  const report = getMonthReport("2026-03", {
-    "2026-03-23": entry,
-    "2026-03-24": normalizeEntry({ notes: "rest", swimDistance: 50 }),
-  });
-  assert(report.trackedDays === 2, "month report tracked days");
-  assert(report.notesCount === 2, "month report notes count");
-  assert(report.swimDistanceTotal === 125, "month report swim total");
-
-  const stats = getDashboardStats({ "2026-03-23": entry });
-  assert(stats.trackedDays === 1, "dashboard tracked days");
-  assert(stats.bestSwim === 75, "dashboard best swim");
-
-  const cal = buildCalendar("2026-03");
-  assert(cal.length === 42, "calendar should render 42 cells");
+  assert(Array.isArray(TRAINING_PLAN.Montag), "Montag plan should exist");
+  assert(TRAINING_PLAN.Dienstag[0] === "Schwimmen Technik", "Dienstag should include swim training");
 
   return "ok";
 }
-
-
