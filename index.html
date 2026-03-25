@@ -1,887 +1,621 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-  <link rel="icon" type="image/png" href="favicon.png">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png">
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Daily Tracker 2.3 (Clean)</title>
-  <!-- Chart.js bleibt drin, aber wird nur für PDF genutzt -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    :root{
-      --bg:#0b0f14; --card:#121923; --card2:#0f1620; --text:#e8eef6; --muted:#9fb0c3;
-      --ok:#2ecc71; --warn:#f39c12; --accent:#6ea8fe; --shadow: 0 10px 30px rgba(0,0,0,.35); --r:18px;
-    }
-    *{box-sizing:border-box}
-    body{
-      margin:0; padding:16px; color:var(--text);
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-      background:
-        radial-gradient(1200px 600px at 20% 0%, rgba(110,168,254,.18), transparent 50%),
-        radial-gradient(900px 500px at 85% 10%, rgba(46,204,113,.12), transparent 55%),
-        var(--bg);
-    }
-    .wrap{max-width:980px;margin:0 auto;display:grid;gap:14px}
-    header{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
-    h1{margin:0;font-size:20px;letter-spacing:.2px}
-    .subtitle{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.35}
-    .card{
-      background: linear-gradient(180deg, rgba(255,255,255,.03), transparent 40%), var(--card);
-      border:1px solid rgba(255,255,255,.06); border-radius:var(--r); box-shadow:var(--shadow);
-      padding:14px;
-    }
-    .row{display:grid;gap:12px}
-    @media(min-width:860px){ .row.two{grid-template-columns:1.1fr .9fr} }
+import React, { useEffect, useMemo, useState } from "react";
 
-    .controls{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center}
-    .left{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-    .pill{
-      display:inline-flex;gap:8px;align-items:center;
-      padding:6px 10px;border-radius:999px;font-size:12px;color:var(--muted);
-      border:1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.06);
-    }
-    .btn{
-      display:inline-flex;align-items:center;gap:8px;white-space:nowrap;
-      padding:10px 12px;border-radius:12px;font-size:14px;cursor:pointer; user-select:none;
-      color:var(--text); border:1px solid rgba(110,168,254,.32); background: rgba(110,168,254,.16);
-      transition:.15s transform ease,.15s opacity ease;
-    }
-    .btn:active{transform:scale(.98);opacity:.92}
-    .btn.secondary{border-color:rgba(255,255,255,.12);background:rgba(255,255,255,.06)}
-    .btn.danger{border-color:rgba(231,76,60,.34);background:rgba(231,76,60,.14)}
-    select,input[type="text"]{
-      background:var(--card2); border:1px solid rgba(255,255,255,.08); color:var(--text);
-      padding:10px 12px;border-radius:12px;font-size:14px;outline:none;
-    }
+const STORAGE_KEY = "tracker_v8";
 
-    .progress{margin-top:12px;display:grid;gap:10px}
-    .scoreLine{display:flex;justify-content:space-between;color:var(--muted);font-size:12px}
-    .barO{height:18px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.10)}
-    .barI{height:100%;width:0%;transition:width .25s ease;background:linear-gradient(90deg, rgba(46,204,113,.95), rgba(110,168,254,.95))}
-    .msg{
-      border-radius:14px;padding:10px 12px;font-size:13px;line-height:1.35;color:var(--muted);
-      border:1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.04);
-    }
-    .msg.ok{border-color:rgba(46,204,113,.35);background:rgba(46,204,113,.10);color:#bff2d2}
-    .msg.warn{border-color:rgba(243,156,18,.35);background:rgba(243,156,18,.10);color:#ffd9a1}
+const BASE_TRAINING = {
+  monday: {
+    label: "Push (Brust/Schulter/Trizeps)",
+    tasks: ["Bankdrücken", "Schrägbankdrücken", "Schulterdrücken", "Seitheben", "Trizeps"],
+  },
+  tuesday: {
+    label: "Schwimmen (Technik)",
+    tasks: ["Aufwärmen", "Technik", "Atmung", "Angst abbauen", "Cooldown"],
+  },
+  wednesday: {
+    label: "Pull (Rücken/Bizeps)",
+    tasks: ["Latziehen", "Rudern", "Face Pulls", "Bizeps Curls", "Hammer Curls"],
+  },
+  friday: {
+    label: "Schwimmen (Ausdauer)",
+    tasks: ["Aufwärmen", "25–100m Intervalle", "Pause", "Atmung ruhig", "Cooldown"],
+  },
+  saturday: {
+    label: "Beine",
+    tasks: ["Kniebeuge oder Beinpresse", "Beinbeuger", "Beinstrecker", "Waden", "Bauch"],
+  },
+  sunday: {
+    label: "Pause",
+    tasks: ["Mobilität", "Spaziergang", "Regeneration"],
+  },
+};
 
-    .grid{display:grid;gap:10px;margin-top:12px}
-    .task{
-      display:flex;justify-content:space-between;align-items:center;gap:10px;
-      padding:12px;border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);
-    }
-    .tname{font-weight:650;font-size:14px;letter-spacing:.2px}
-    .thint{margin-top:2px;color:var(--muted);font-size:12px}
-    input[type="checkbox"]{width:22px;height:22px;accent-color:var(--accent);cursor:pointer}
-    input[type="checkbox"]:disabled{opacity:.45;cursor:not-allowed}
+const LEARNING_DAYS = {
+  monday: "Lernen",
+  wednesday: "Lernen",
+  saturday: "Lernen (Nachmittag)",
+  sunday: "Lernen (light)",
+};
 
-    .planBox{
-      margin-top:12px;white-space:pre-line;line-height:1.4;font-size:12px;color:var(--muted);
-      border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);border-radius:14px;padding:10px 12px;
-    }
+const LEARNING_TASKS = ["Lesen", "Studium"];
+const SWIM_LEVELS = [25, 50, 75, 100, 150, 200];
+const DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const DAY_LABELS = {
+  sunday: "Sonntag",
+  monday: "Montag",
+  tuesday: "Dienstag",
+  wednesday: "Mittwoch",
+  thursday: "Donnerstag",
+  friday: "Freitag",
+  saturday: "Samstag",
+};
+const MONTHS = [
+  "Januar", "Februar", "März", "April", "Mai", "Juni",
+  "Juli", "August", "September", "Oktober", "November", "Dezember",
+];
 
-    .customBox{
-      margin-top:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);
-      border-radius:14px;padding:12px;
-    }
-    .customHead{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
-    .inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
-    .customList{display:grid;gap:8px;margin-top:10px}
-    .cItem{
-      display:flex;justify-content:space-between;align-items:center;gap:10px;
-      padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);
-    }
-    .iconBtn{
-      padding:8px 10px;border-radius:10px;font-size:12px;cursor:pointer;color:var(--text);
-      border:1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06);
-    }
-    .iconBtn:disabled{opacity:.45;cursor:not-allowed}
+const getKey = (d) => {
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().split("T")[0];
+};
+const parseDate = (key) => {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+const getDay = (key) => parseDate(key).getDay();
+const getDayKey = (key) => DAYS[getDay(key)];
+const formatDate = (key) => {
+  const d = parseDate(key);
+  return `${DAY_LABELS[getDayKey(key)]}, ${d.getDate()}. ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+};
+const getMonthKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+const shiftMonth = (date, delta) => new Date(date.getFullYear(), date.getMonth() + delta, 1);
 
-    .table{width:100%;border-collapse:collapse;overflow:hidden;border-radius:14px;border:1px solid rgba(255,255,255,.08);margin-top:10px}
-    .table th,.table td{padding:10px 8px;font-size:12px;text-align:center;border-bottom:1px solid rgba(255,255,255,.06)}
-    .table th{color:var(--muted);font-weight:600;background:rgba(255,255,255,.03)}
-    .table td.left{text-align:left}
-    .mini{color:var(--muted);font-size:12px}
+const initial = {
+  date: getKey(new Date()),
+  month: getMonthKey(new Date()),
+  entries: {},
+  swimGoal: 200,
+};
 
-    /* PRINT / PDF */
-    .print-area{display:none;}
-    @media print{
-      body{background:#fff;color:#000;padding:0}
-      .wrap{display:none}
-      .print-area{display:block;padding:18px;font-family:Arial,sans-serif}
-      .print-area h2{margin:0 0 6px 0}
-      .print-area .sub{color:#333;margin:0 0 14px 0}
-      .print-area table{width:100%;border-collapse:collapse}
-      .print-area th,.print-area td{border:1px solid #bbb;padding:8px;font-size:12px;text-align:center}
-      .print-area th{background:#f1f1f1}
-      .print-area .left{text-align:left}
-      .print-area .section{margin-top:14px;font-weight:bold}
-      .print-area ul{margin:6px 0 0 18px}
-      .print-area li{margin:3px 0;font-size:12px}
-      .print-area .charts{display:grid;gap:12px;margin-top:10px}
-      .print-area canvas{border:1px solid #bbb;border-radius:8px;padding:8px}
-    }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <header>
-      <div>
-        <h1>✅ Daily Tracker 2.3 (Clean)</h1>
-        <div class="subtitle">
-          Keine Diagramme im Programm – <b>Diagramme erscheinen nur im PDF</b>. Freizeit ist immer anklickbar (Warnung bei &gt;2×/Woche).
-          Eigene Tasks gelten nur für den Tag, an dem du sie anlegst.
-        </div>
-      </div>
-      <div class="pill" id="todayPill">Heute: –</div>
-    </header>
+const emptyEntry = () => ({
+  training: {},
+  learning: {},
+  notes: "",
+  padel: false,
+  swimDistance: 0,
+});
 
-    <div class="card">
-      <div class="controls">
-        <div class="left">
-          <div class="pill" id="dailyStatus">Tagesziel: –</div>
-          <div class="pill" id="weekPill">Woche: –</div>
-          <div class="pill" id="weekLeisurePill">Freizeit diese Woche: –</div>
-          <div class="pill" id="planPill">Plan: –</div>
-          <div class="pill" id="extrasPill">Extras: 0/0</div>
-        </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          <button class="btn" id="saveBtn">💾 Heute speichern</button>
-          <button class="btn secondary" id="reportBtn">📊 Monatsbericht</button>
-          <button class="btn secondary" id="pdfBtn">🧾 PDF Export</button>
-          <button class="btn danger" id="clearBtn">🗑️ Daten löschen</button>
-        </div>
-      </div>
+const normalizeEntry = (entry) => ({
+  training: entry?.training && typeof entry.training === "object" ? entry.training : {},
+  learning: entry?.learning && typeof entry.learning === "object" ? entry.learning : {},
+  notes: typeof entry?.notes === "string" ? entry.notes : "",
+  padel: !!entry?.padel,
+  swimDistance: Number.isFinite(Number(entry?.swimDistance)) ? Number(entry.swimDistance) : 0,
+});
 
-      <div class="progress">
-        <div class="scoreLine">
-          <span id="scoreText">Score: 0/4</span>
-          <span id="percentText">0%</span>
-        </div>
-        <div class="barO"><div class="barI" id="barInner"></div></div>
-        <div class="msg" id="messageBox">Hake ab, was heute dran ist. Dann „Heute speichern“.</div>
-      </div>
+function isPadelWeek(dateKey, entries) {
+  return !!entries?.[dateKey]?.padel;
+}
 
-      <div class="planBox" id="weeklyPlanBox"></div>
+function getTrainingForDay(dayKey, dateKey, entries) {
+  const base = BASE_TRAINING[dayKey];
+  const padel = isPadelWeek(dateKey, entries);
 
-      <div class="customBox">
-        <div class="customHead">
-          <div>
-            <div style="font-weight:700;margin-bottom:4px;">🧩 Eigene Tasks (nur heute)</div>
-            <div class="mini">Nur unter dem heutigen Datum gespeichert. In der Vergangenheit nur ansehen.</div>
-          </div>
-          <div class="pill">
-            <input type="checkbox" id="overrideToggle" style="width:18px;height:18px;">
-            <span>Ausnahme-Modus</span>
-          </div>
-        </div>
-
-        <div class="inline">
-          <input type="text" id="customInput" placeholder="z.B. Bewerbung, 30min Englisch, Termin..." style="flex:1;min-width:220px;">
-          <button class="btn secondary" id="addCustomBtn">➕ Task hinzufügen</button>
-        </div>
-
-        <div class="customList" id="customList"></div>
-        <div class="mini" id="customHint" style="margin-top:8px;"></div>
-      </div>
-    </div>
-
-    <div class="row two">
-      <div class="card">
-        <div style="font-weight:700;margin-bottom:6px;">Heute abhaken (Kern)</div>
-        <div class="mini">Ausnahme-Modus entsperrt Arbeit/Lernen/Sport. Freizeit bleibt immer verfügbar.</div>
-
-        <div class="grid">
-          <div class="task">
-            <div>
-              <div class="tname">🧑‍💼 Arbeit</div>
-              <div class="thint">Geplant: Mo–Fr</div>
-            </div>
-            <input type="checkbox" id="tWork">
-          </div>
-
-          <div class="task">
-            <div>
-              <div class="tname">📚 Lernen</div>
-              <div class="thint">Geplant: Mo + Mi + Sa + So</div>
-            </div>
-            <input type="checkbox" id="tStudy">
-          </div>
-
-          <div class="task">
-            <div>
-              <div class="tname">🏋️ Sport</div>
-              <div class="thint">Geplant: Di + Do + Sa (+ So optional)</div>
-            </div>
-            <input type="checkbox" id="tSport">
-          </div>
-
-          <div class="task">
-            <div>
-              <div class="tname">🎉 Freizeit</div>
-              <div class="thint">Jeden Tag anwählbar • Warnung: max 2×/Woche</div>
-            </div>
-            <input type="checkbox" id="tLeisure">
-          </div>
-        </div>
-
-        <div class="msg" id="leisureRuleBox" style="margin-top:12px;">Freizeit-Regel: Alles okay.</div>
-      </div>
-
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
-          <div style="font-weight:700;">Tages-Log (Monat)</div>
-          <select id="monthSelect"></select>
-        </div>
-
-        <table class="table" id="logTable">
-          <thead>
-            <tr>
-              <th>Datum</th><th>Arbeit</th><th>Lernen</th><th>Sport</th><th>Freizeit</th><th>Extras</th><th>Score</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-
-        <div class="mini" style="margin-top:10px;">
-          Tipp: Klick auf einen Tag lädt ihn (nur ansehen). Oben auf „Heute“ klicken → zurück.
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- PRINT / PDF -->
-  <div class="print-area" id="printArea">
-    <h2 id="printTitle">Monatsbericht</h2>
-    <p class="sub" id="printSub"></p>
-    <div id="printSummary"></div>
-
-    <div class="section">Diagramme</div>
-    <div class="charts">
-      <canvas id="printScoreChart" height="170"></canvas>
-      <canvas id="printCategoryChart" height="170"></canvas>
-    </div>
-
-    <div class="section">Tagesübersicht</div>
-    <table id="printTable">
-      <thead>
-        <tr>
-          <th>Datum</th><th>Arbeit</th><th>Lernen</th><th>Sport</th><th>Freizeit</th><th>Extras</th><th>Score</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-
-    <div class="section">Custom Tasks (nur Tage mit Extras)</div>
-    <div id="printCustomDetails"></div>
-
-    <p class="sub" style="margin-top:14px;">Erstellt mit Daily Tracker 2.3</p>
-  </div>
-
-<script>
-(() => {
-  // -----------------
-  // Helpers
-  // -----------------
-  const qs = (s) => document.querySelector(s);
-  const el = (tag, props={}) => Object.assign(document.createElement(tag), props);
-
-  const STORAGE_KEY = "dailyTrackerV23";
-
-  // UI
-  const ui = {
-    todayPill: qs("#todayPill"),
-    dailyStatus: qs("#dailyStatus"),
-    weekPill: qs("#weekPill"),
-    weekLeisurePill: qs("#weekLeisurePill"),
-    planPill: qs("#planPill"),
-    extrasPill: qs("#extrasPill"),
-    monthSelect: qs("#monthSelect"),
-    scoreText: qs("#scoreText"),
-    percentText: qs("#percentText"),
-    barInner: qs("#barInner"),
-    messageBox: qs("#messageBox"),
-    leisureRuleBox: qs("#leisureRuleBox"),
-    weeklyPlanBox: qs("#weeklyPlanBox"),
-
-    tWork: qs("#tWork"),
-    tStudy: qs("#tStudy"),
-    tSport: qs("#tSport"),
-    tLeisure: qs("#tLeisure"),
-    overrideToggle: qs("#overrideToggle"),
-
-    saveBtn: qs("#saveBtn"),
-    reportBtn: qs("#reportBtn"),
-    pdfBtn: qs("#pdfBtn"),
-    clearBtn: qs("#clearBtn"),
-
-    logBody: qs("#logTable tbody"),
-
-    customInput: qs("#customInput"),
-    addCustomBtn: qs("#addCustomBtn"),
-    customList: qs("#customList"),
-    customHint: qs("#customHint"),
-  };
-
-  // Print UI
-  const pr = {
-    title: qs("#printTitle"),
-    sub: qs("#printSub"),
-    summary: qs("#printSummary"),
-    tableBody: qs("#printTable tbody"),
-    customDetails: qs("#printCustomDetails"),
-    scoreCanvas: qs("#printScoreChart"),
-    catCanvas: qs("#printCategoryChart"),
-  };
-
-  // -----------------
-  // Plan
-  // -----------------
-  // Work: Mo-Fri
-  // Study: Mo, Mi, Sa, So
-  // Sport: Di, Do, Sa (+ So optional)
-  // Leisure: ANY DAY (warn >2/week)
-  const WEEK_PLAN = {
-    0: { work:false, study:true,  sport:true,  label:"Sonntag" },
-    1: { work:true,  study:true,  sport:false, label:"Montag" },
-    2: { work:true,  study:false, sport:true,  label:"Dienstag" },
-    3: { work:true,  study:true,  sport:false, label:"Mittwoch" },
-    4: { work:true,  study:false, sport:true,  label:"Donnerstag" },
-    5: { work:true,  study:false, sport:false, label:"Freitag" },
-    6: { work:false, study:true,  sport:true,  label:"Samstag" }
-  };
-
-  // -----------------
-  // Date utils
-  // -----------------
-  const todayStr = () => {
-    const d = new Date();
-    const tz = d.getTimezoneOffset();
-    const local = new Date(d.getTime() - tz*60000);
-    return local.toISOString().slice(0,10);
-  };
-  const ym = (d) => d.slice(0,7);
-  const parseDate = (s) => {
-    const [y,m,d] = s.split("-").map(Number);
-    return new Date(y, m-1, d);
-  };
-  const isoWeekInfo = (dateStr) => {
-    const date = parseDate(dateStr);
-    const day = (date.getDay() + 6) % 7; // Mon=0..Sun=6
-    date.setDate(date.getDate() - day + 3);
-    const firstThursday = new Date(date.getFullYear(), 0, 4);
-    const firstDay = (firstThursday.getDay() + 6) % 7;
-    firstThursday.setDate(firstThursday.getDate() - firstDay + 3);
-    const week = 1 + Math.round((date - firstThursday) / (7*24*3600*1000));
-    return { year: date.getFullYear(), week };
-  };
-  const weekKey = (dateStr) => {
-    const w = isoWeekInfo(dateStr);
-    return `${w.year}-W${String(w.week).padStart(2,"0")}`;
-  };
-
-  // -----------------
-  // Storage
-  // -----------------
-  const loadAll = () => {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
-    catch { return []; }
-  };
-  const saveAll = (arr) => localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
-  const getEntry = (date) => loadAll().find(e => e.date === date) || null;
-  const upsertEntry = (entry) => {
-    const arr = loadAll();
-    const i = arr.findIndex(e => e.date === entry.date);
-    if(i >= 0) arr[i] = entry; else arr.push(entry);
-    arr.sort((a,b)=>a.date.localeCompare(b.date));
-    saveAll(arr);
-  };
-  const entriesForMonth = (monthStr) => loadAll().filter(e => ym(e.date) === monthStr).sort((a,b)=>a.date.localeCompare(b.date));
-
-  // -----------------
-  // State
-  // -----------------
-  const realToday = todayStr();
-  let activeDate = realToday;
-
-  // Draft custom tasks (only relevant for today; for old days we show stored list)
-  let draftCustom = [];
-
-  // -----------------
-  // Custom tasks
-  // -----------------
-  const customStats = (tasks) => ({
-    total: tasks.length,
-    done: tasks.reduce((a,t)=>a + (t.done?1:0), 0)
-  });
-
-  const currentCustomTasks = () => {
-    if(activeDate === realToday) return draftCustom;
-    const e = getEntry(activeDate);
-    return (e && Array.isArray(e.customTasks)) ? e.customTasks : [];
-  };
-
-  const renderCustomList = () => {
-    const tasks = currentCustomTasks();
-    const isToday = (activeDate === realToday);
-
-    ui.customList.innerHTML = "";
-    const st = customStats(tasks);
-    ui.extrasPill.textContent = `Extras: ${st.done}/${st.total}`;
-
-    if(tasks.length === 0){
-      ui.customHint.textContent = isToday
-        ? "Noch keine eigenen Tasks für heute. Oben eingeben → hinzufügen."
-        : "Keine eigenen Tasks für diesen Tag.";
-      return;
-    }
-
-    ui.customHint.textContent = isToday
-      ? "Du kannst Extras abhaken und beim Speichern werden sie ins Log + PDF übernommen."
-      : "Vergangener Tag: Extras nur ansehen.";
-
-    tasks.forEach((t, idx) => {
-      const row = el("div", { className:"cItem" });
-
-      const left = el("div", { style:"display:flex;gap:10px;align-items:center;" });
-      const cb = el("input", { type:"checkbox", checked:!!t.done, disabled:!isToday });
-      cb.addEventListener("change", () => {
-        if(!isToday) return;
-        draftCustom[idx].done = cb.checked;
-        renderAll();
-      });
-
-      left.appendChild(cb);
-      left.appendChild(el("div", { textContent:t.text, style:"font-size:13px;line-height:1.25;" }));
-
-      const actions = el("div", { style:"display:flex;gap:8px;align-items:center;" });
-      const del = el("button", { className:"iconBtn", textContent:"🗑️", disabled:!isToday, title:"Task löschen" });
-      del.addEventListener("click", () => {
-        if(!isToday) return;
-        draftCustom.splice(idx,1);
-        renderAll();
-      });
-
-      actions.appendChild(del);
-      row.appendChild(left);
-      row.appendChild(actions);
-      ui.customList.appendChild(row);
-    });
-  };
-
-  const addCustomTask = () => {
-    if(activeDate !== realToday) return alert("Custom Tasks kannst du nur für heute anlegen.");
-    const text = (ui.customInput.value || "").trim();
-    if(!text) return;
-    draftCustom.push({ text, done:false });
-    ui.customInput.value = "";
-    renderAll();
-  };
-
-  // -----------------
-  // Core scoring + leisure rule
-  // -----------------
-  const coreScore = () =>
-    (ui.tWork.checked?1:0) + (ui.tStudy.checked?1:0) + (ui.tSport.checked?1:0) + (ui.tLeisure.checked?1:0);
-
-  const countLeisureInWeek = (wk, entries) =>
-    entries.filter(e => weekKey(e.date) === wk && e.leisure).length;
-
-  const updateLeisureRule = () => {
-    const entries = loadAll();
-    const wk = weekKey(activeDate);
-
-    // count saved leisure for the week, but reflect current checkbox if today/viewed day differs
-    let weekCount = countLeisureInWeek(wk, entries);
-    const saved = getEntry(activeDate);
-    const savedLeisure = saved ? !!saved.leisure : false;
-    const currentLeisure = ui.tLeisure.checked;
-
-    if(savedLeisure && !currentLeisure) weekCount -= 1;
-    if(!savedLeisure && currentLeisure) weekCount += 1;
-
-    ui.weekPill.textContent = `Woche: ${wk}`;
-    ui.weekLeisurePill.textContent = `Freizeit diese Woche: ${weekCount}/2`;
-
-    if(weekCount <= 2){
-      ui.leisureRuleBox.className = "msg ok";
-      ui.leisureRuleBox.textContent = "Freizeit-Regel: Alles okay (max. 2× pro Woche).";
-    } else {
-      ui.leisureRuleBox.className = "msg warn";
-      ui.leisureRuleBox.textContent = "⚠️ Freizeit-Regel: Du bist über 2× in dieser Woche. Wenn es passt: okay – sonst Häkchen raus.";
-    }
-  };
-
-  // -----------------
-  // Plan locks
-  // -----------------
-  const applyPlanLocks = () => {
-    const plan = WEEK_PLAN[parseDate(activeDate).getDay()];
-    const isToday = (activeDate === realToday);
-    const override = ui.overrideToggle.checked;
-
-    const setEnabled = (cb, planned) => {
-      if(!isToday){ cb.disabled = true; return; }
-      if(override){ cb.disabled = false; return; }
-      cb.disabled = !planned;
-      if(!planned) cb.checked = false;
+  if (dayKey === "saturday" && padel) {
+    return { label: "Padel 🎾", tasks: ["Padel spielen", "Spaß haben", "Locker bewegen"] };
+  }
+  if (dayKey === "sunday" && padel) {
+    return {
+      label: "Beine (verschoben wegen Padel)",
+      tasks: ["Kniebeuge oder Beinpresse", "Beinbeuger", "Beinstrecker", "Waden", "Bauch"],
     };
+  }
+  return base;
+}
 
-    setEnabled(ui.tWork, plan.work);
-    setEnabled(ui.tStudy, plan.study);
-    setEnabled(ui.tSport, plan.sport);
+const load = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return initial;
+    const parsed = JSON.parse(raw);
+    const entries = parsed?.entries && typeof parsed.entries === "object"
+      ? Object.fromEntries(Object.entries(parsed.entries).map(([k, v]) => [k, normalizeEntry(v)]))
+      : {};
+    return {
+      date: typeof parsed?.date === "string" ? parsed.date : initial.date,
+      month: typeof parsed?.month === "string" ? parsed.month : initial.month,
+      entries,
+      swimGoal: Number.isFinite(Number(parsed?.swimGoal)) ? Number(parsed.swimGoal) : 200,
+    };
+  } catch {
+    return initial;
+  }
+};
 
-    // Leisure always enabled when today; otherwise locked (view-only)
-    ui.tLeisure.disabled = !isToday;
+const save = (d) => localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
 
-    // Custom tasks edit only today
-    ui.customInput.disabled = !isToday;
-    ui.addCustomBtn.disabled = !isToday;
-
-    const labels = [];
-    if(plan.work) labels.push("Arbeit");
-    if(plan.study) labels.push("Lernen");
-    if(plan.sport) labels.push("Sport");
-    labels.push("Freizeit (frei)");
-    ui.planPill.textContent = `Heute geplant: ${labels.join(", ")}`;
+function cardStyle(extra = {}) {
+  return {
+    marginTop: 20,
+    padding: 18,
+    background: "#121923",
+    borderRadius: 18,
+    border: "1px solid rgba(255,255,255,0.06)",
+    boxShadow: "0 12px 30px rgba(0,0,0,0.22)",
+    ...extra,
   };
+}
 
-  // -----------------
-  // Month select + table
-  // -----------------
-  const buildMonthSelect = () => {
-    const months = new Set(loadAll().map(e => ym(e.date)));
-    months.add(ym(realToday));
-    const sorted = Array.from(months).sort((a,b)=>b.localeCompare(a));
-    ui.monthSelect.innerHTML = "";
-    sorted.forEach(m => ui.monthSelect.appendChild(el("option", { value:m, textContent:m })));
-    ui.monthSelect.value = ym(activeDate);
+function buttonStyle(active = false) {
+  return {
+    background: active ? "#22d3ee" : "#1e293b",
+    color: active ? "#0b0f14" : "white",
+    border: active ? "1px solid #22d3ee" : "1px solid #334155",
+    padding: "10px 14px",
+    borderRadius: 14,
+    cursor: "pointer",
+    fontWeight: 600,
   };
+}
 
-  const renderTable = () => {
-    const data = entriesForMonth(ui.monthSelect.value);
-    ui.logBody.innerHTML = "";
+function progressBar(pct, color = "#22d3ee") {
+  return (
+    <div style={{ background: "#0f172a", borderRadius: 999, height: 10, overflow: "hidden", marginTop: 8 }}>
+      <div style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: color, height: "100%" }} />
+    </div>
+  );
+}
 
-    if(data.length === 0){
-      const tr = el("tr");
-      tr.innerHTML = `<td class="left" colspan="7" style="color:var(--muted);padding:14px;">Noch keine Einträge. Speichere heute deinen Tag.</td>`;
-      ui.logBody.appendChild(tr);
-      return;
-    }
+function getTrainingProgress(dayKey, entry, dateKey, entries) {
+  const training = getTrainingForDay(dayKey, dateKey, entries);
+  if (!training) return 0;
+  const total = training.tasks.length;
+  const done = training.tasks.filter((_, i) => !!entry.training[i]).length;
+  return total ? Math.round((done / total) * 100) : 0;
+}
 
-    data.forEach(e => {
-      const core = (e.work?1:0)+(e.study?1:0)+(e.sport?1:0)+(e.leisure?1:0);
-      const extras = Array.isArray(e.customTasks) ? e.customTasks : [];
-      const ex = customStats(extras);
+function getLearningProgress(dayKey, entry) {
+  if (!LEARNING_DAYS[dayKey]) return 0;
+  return LEARNING_TASKS.some((_, i) => !!entry.learning[i]) ? 100 : 0;
+}
 
-      const tr = el("tr", { style:"cursor:pointer" });
-      tr.title = "Klicken lädt diesen Tag (nur ansehen)";
-      tr.innerHTML = `
-        <td class="left">${e.date}</td>
-        <td>${e.work?"✅":"—"}</td>
-        <td>${e.study?"✅":"—"}</td>
-        <td>${e.sport?"✅":"—"}</td>
-        <td>${e.leisure?"✅":"—"}</td>
-        <td>${ex.total?`${ex.done}/${ex.total}`:"—"}</td>
-        <td><b>${core}/4</b></td>
-      `;
-      tr.addEventListener("click", () => { activeDate = e.date; loadDay(); });
-      ui.logBody.appendChild(tr);
-    });
-  };
+function isSwimDay(dayKey) {
+  return dayKey === "tuesday" || dayKey === "friday";
+}
 
-  // -----------------
-  // Load day
-  // -----------------
-  const loadDay = () => {
-    const dt = parseDate(activeDate);
-    const dayName = WEEK_PLAN[dt.getDay()].label;
-    ui.todayPill.textContent = `${dayName} • ${activeDate}${activeDate===realToday ? " (Heute)" : ""}`;
+function getSwimLevel(distance) {
+  let current = 0;
+  for (const level of SWIM_LEVELS) {
+    if (distance >= level) current = level;
+  }
+  return current;
+}
 
-    const entry = getEntry(activeDate);
-    if(entry){
-      ui.tWork.checked = !!entry.work;
-      ui.tStudy.checked = !!entry.study;
-      ui.tSport.checked = !!entry.sport;
-      ui.tLeisure.checked = !!entry.leisure;
+function getHeatColor(trainingPct, learningPct, swimDistance) {
+  if (swimDistance > 0) return "rgba(59,130,246,0.28)";
+  if (trainingPct >= 100 && learningPct >= 100) return "rgba(34,197,94,0.30)";
+  if (trainingPct > 0) return "rgba(34,211,238,0.22)";
+  if (learningPct > 0) return "rgba(168,85,247,0.22)";
+  return null;
+}
 
-      draftCustom = (activeDate===realToday)
-        ? (Array.isArray(entry.customTasks) ? entry.customTasks.map(t=>({text:String(t.text||""),done:!!t.done})) : [])
-        : (Array.isArray(entry.customTasks) ? entry.customTasks : []);
+function getDashboardStats(entries) {
+  const keys = Object.keys(entries);
+  if (!keys.length) {
+    return { trackedDays: 0, trainingDays: 0, learningDays: 0, streak: 0, avgTraining: 0, avgLearning: 0, bestSwim: 0 };
+  }
 
-      ui.messageBox.className = "msg";
-      ui.messageBox.textContent = activeDate===realToday
-        ? "Heute geladen. Hake ab und speichere."
-        : "Vergangener Tag geladen (nur ansehen).";
+  const sorted = [...keys].sort();
+  let streak = 0;
+  let cursor = parseDate(getKey(new Date()));
+  while (true) {
+    const key = getKey(cursor);
+    if (entries[key]) {
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
     } else {
-      ui.tWork.checked = ui.tStudy.checked = ui.tSport.checked = ui.tLeisure.checked = false;
-      draftCustom = [];
-      ui.messageBox.className = "msg";
-      ui.messageBox.textContent = activeDate===realToday
-        ? "Noch kein Eintrag für heute. Hake ab und speichere."
-        : "Kein Eintrag für diesen Tag.";
+      break;
     }
+  }
 
-    buildMonthSelect();
-    applyPlanLocks();
-    renderAll();
-  };
+  let trainingDays = 0;
+  let learningDays = 0;
+  let trainingSum = 0;
+  let learningSum = 0;
+  let trainingCount = 0;
+  let learningCount = 0;
+  let bestSwim = 0;
 
-  // -----------------
-  // Render all (UI)
-  // -----------------
-  const renderAll = () => {
-    // Score/progress
-    const s = coreScore();
-    const pct = Math.round((s/4)*100);
-    ui.barInner.style.width = pct + "%";
-    ui.scoreText.textContent = `Score: ${s}/4`;
-    ui.percentText.textContent = `${pct}%`;
-
-    if(pct === 100){
-      ui.dailyStatus.textContent = "Tagesziel: ✅ erreicht";
-      ui.dailyStatus.style.borderColor = "rgba(46,204,113,.35)";
-      ui.dailyStatus.style.background = "rgba(46,204,113,.10)";
-      ui.dailyStatus.style.color = "#bff2d2";
-      ui.messageBox.className = "msg ok";
-      ui.messageBox.textContent = "Stark! Tagesziel erreicht. Klick „Heute speichern“.";
-    } else {
-      ui.dailyStatus.textContent = "Tagesziel: ⏳ in Arbeit";
-      ui.dailyStatus.style.borderColor = "rgba(255,255,255,.10)";
-      ui.dailyStatus.style.background = "rgba(255,255,255,.06)";
-      ui.dailyStatus.style.color = "var(--muted)";
-      // messageBox wird in loadDay gesetzt oder bleibt
+  sorted.forEach((dateKey) => {
+    const dayKey = getDayKey(dateKey);
+    const entry = normalizeEntry(entries[dateKey]);
+    const trainingProgress = getTrainingProgress(dayKey, entry, dateKey, entries);
+    const learningProgress = getLearningProgress(dayKey, entry);
+    if (trainingProgress > 0 || Object.keys(entry.training).length > 0) {
+      trainingDays += 1;
+      trainingSum += trainingProgress;
+      trainingCount += 1;
     }
-
-    // Extras pill + list
-    renderCustomList();
-
-    // Leisure rule pill/message
-    updateLeisureRule();
-
-    // Month table (for current selected month)
-    renderTable();
-  };
-
-  // -----------------
-  // Save
-  // -----------------
-  const currentEntry = () => ({
-    date: activeDate,
-    work: ui.tWork.checked,
-    study: ui.tStudy.checked,
-    sport: ui.tSport.checked,
-    leisure: ui.tLeisure.checked,
-    customTasks: (draftCustom || []).map(t => ({ text:String(t.text||"").trim(), done:!!t.done })).filter(t => t.text.length>0),
+    if (LEARNING_DAYS[dayKey] && (learningProgress > 0 || Object.keys(entry.learning).length > 0)) {
+      learningDays += 1;
+      learningSum += learningProgress;
+      learningCount += 1;
+    }
+    bestSwim = Math.max(bestSwim, entry.swimDistance || 0);
   });
 
-  const saveToday = () => {
-    if(activeDate !== realToday) return alert("Speichern ist nur für den heutigen Tag gedacht. Klick oben auf „Heute“.");
-    upsertEntry(currentEntry());
-    ui.messageBox.className = "msg ok";
-    ui.messageBox.textContent = "Gespeichert ✅";
-    buildMonthSelect();
-    renderAll();
+  return {
+    trackedDays: sorted.length,
+    trainingDays,
+    learningDays,
+    streak,
+    avgTraining: trainingCount ? Math.round(trainingSum / trainingCount) : 0,
+    avgLearning: learningCount ? Math.round(learningSum / learningCount) : 0,
+    bestSwim,
   };
+}
 
-  // -----------------
-  // Reports
-  // -----------------
-  const calcMonthStats = (monthStr) => {
-    const data = entriesForMonth(monthStr);
-    const days = data.length;
+function getMonthReport(month, entries) {
+  const keys = Object.keys(entries).filter((k) => k.startsWith(month));
+  let trainingCompleted = 0;
+  let trainingPossible = 0;
+  let learningCompleted = 0;
+  let learningPossible = 0;
+  let notesCount = 0;
+  let swimDistanceTotal = 0;
+  let bestSwim = 0;
 
-    const coreTotal = data.reduce((a,e)=>a+(e.work?1:0)+(e.study?1:0)+(e.sport?1:0)+(e.leisure?1:0),0);
-    const coreMax = days*4;
-    const corePct = coreMax ? Math.round((coreTotal/coreMax)*100) : 0;
+  keys.forEach((key) => {
+    const dayKey = getDayKey(key);
+    const entry = normalizeEntry(entries[key]);
+    const training = getTrainingForDay(dayKey, key, entries);
+    if (training) {
+      trainingPossible += training.tasks.length;
+      trainingCompleted += training.tasks.filter((_, i) => !!entry.training[i]).length;
+    }
+    if (LEARNING_DAYS[dayKey]) {
+      learningPossible += LEARNING_TASKS.length;
+      learningCompleted += LEARNING_TASKS.some((_, i) => !!entry.learning[i]) ? LEARNING_TASKS.length : 0;
+    }
+    if (entry.notes.trim()) notesCount += 1;
+    swimDistanceTotal += entry.swimDistance || 0;
+    bestSwim = Math.max(bestSwim, entry.swimDistance || 0);
+  });
 
-    const work = data.reduce((a,e)=>a+(e.work?1:0),0);
-    const study = data.reduce((a,e)=>a+(e.study?1:0),0);
-    const sport = data.reduce((a,e)=>a+(e.sport?1:0),0);
-    const leisure = data.reduce((a,e)=>a+(e.leisure?1:0),0);
-
-    const extrasTotal = data.reduce((a,e)=>a+((e.customTasks||[]).length),0);
-    const extrasDone = data.reduce((a,e)=>a+((e.customTasks||[]).filter(t=>t.done).length),0);
-
-    return { monthStr, data, days, coreTotal, coreMax, corePct, work, study, sport, leisure, extrasDone, extrasTotal };
+  return {
+    trackedDays: keys.length,
+    trainingPercent: trainingPossible ? Math.round((trainingCompleted / trainingPossible) * 100) : 0,
+    learningPercent: learningPossible ? Math.round((learningCompleted / learningPossible) * 100) : 0,
+    notesCount,
+    swimDistanceTotal,
+    bestSwim,
   };
+}
 
-  const monthlyReport = () => {
-    const m = ui.monthSelect.value;
-    const st = calcMonthStats(m);
-    if(st.days === 0) return alert(`Noch keine Daten für ${m}.`);
+function buildCalendar(month) {
+  const [year, mon] = month.split("-").map(Number);
+  const first = new Date(year, mon - 1, 1);
+  const weekday = (first.getDay() + 6) % 7;
+  const start = new Date(first);
+  start.setDate(first.getDate() - weekday);
+  return Array.from({ length: 42 }, (_, i) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + i);
+    return {
+      key: getKey(date),
+      label: date.getDate(),
+      inMonth: date.getMonth() === mon - 1,
+      isToday: getKey(date) === getKey(new Date()),
+    };
+  });
+}
 
-    alert(
-      `📊 Monatsbericht: ${st.monthStr}\n\n` +
-      `Tage getrackt: ${st.days}\n` +
-      `Kern: ${st.coreTotal} / ${st.coreMax} (${st.corePct}%)\n\n` +
-      `Kern (Anzahl erledigt):\n` +
-      `• Arbeit: ${st.work}\n` +
-      `• Lernen: ${st.study}\n` +
-      `• Sport: ${st.sport}\n` +
-      `• Freizeit: ${st.leisure}\n\n` +
-      `Extras (Custom Tasks): ${st.extrasDone}/${st.extrasTotal}\n`
-    );
-  };
+function exportPDF(date, dayKey, entry, entries) {
+  const training = getTrainingForDay(dayKey, date, entries);
+  const trainingHtml = training
+    ? `<h2>Training</h2><p><strong>${training.label}</strong></p><ul>${training.tasks.map((t, i) => `<li>${entry.training[i] ? "☑" : "☐"} ${t}</li>`).join("")}</ul>`
+    : `<h2>Training</h2><p>Kein Training geplant</p>`;
+  const learningHtml = LEARNING_DAYS[dayKey]
+    ? `<h2>Lernen</h2><p><strong>${LEARNING_DAYS[dayKey]}</strong></p><ul>${LEARNING_TASKS.map((t, i) => `<li>${entry.learning[i] ? "☑" : "☐"} ${t}</li>`).join("")}</ul>`
+    : `<h2>Lernen</h2><p>Kein Lernen geplant</p>`;
+  const swimHtml = isSwimDay(dayKey)
+    ? `<h2>Schwimmen</h2><p>Erreichte Distanz: <strong>${entry.swimDistance || 0} m</strong></p>`
+    : "";
 
-  // -----------------
-  // PDF Export with charts (ONLY in print)
-  // -----------------
-  let printCharts = { score:null, cat:null };
+  const html = `
+  <html><body style="font-family: Arial; padding: 28px; color: #111827;">
+  <h1>Tagesbericht</h1>
+  <p>${formatDate(date)}</p>
+  ${trainingHtml}
+  ${learningHtml}
+  ${swimHtml}
+  <h2>Notizen</h2>
+  <p>${(entry.notes || "").replace(/</g, "&lt;")}</p>
+  </body></html>`;
 
-  const buildPrintCharts = (st) => {
-    // Destroy previous if any
-    if(printCharts.score) { printCharts.score.destroy(); printCharts.score = null; }
-    if(printCharts.cat) { printCharts.cat.destroy(); printCharts.cat = null; }
+  const w = window.open("", "_blank", "width=900,height=700");
+  if (!w) return;
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 250);
+}
 
-    const labels = st.data.map(e => e.date.slice(8,10));
-    const scores = st.data.map(e => (e.work?1:0)+(e.study?1:0)+(e.sport?1:0)+(e.leisure?1:0));
+export default function App() {
+  const [data, setData] = useState(initial);
 
-    printCharts.score = new Chart(pr.scoreCanvas, {
-      type: "line",
-      data: { labels, datasets: [{ label:"Tages-Score (0–4)", data:scores, tension:0.25, fill:true, borderWidth:2, pointRadius:2 }] },
-      options: { responsive:true, maintainAspectRatio:false, scales:{ y:{ min:0, max:4, ticks:{ stepSize:1 } } } }
-    });
+  useEffect(() => { setData(load()); }, []);
+  useEffect(() => { save(data); }, [data]);
 
-    printCharts.cat = new Chart(pr.catCanvas, {
-      type: "bar",
-      data: {
-        labels:["Arbeit","Lernen","Sport","Freizeit"],
-        datasets:[{ label:"Anzahl erledigt", data:[st.work, st.study, st.sport, st.leisure], borderWidth:1 }]
+  const dayKey = getDayKey(data.date);
+  const entry = normalizeEntry(data.entries[data.date] || emptyEntry());
+  const monthDate = useMemo(() => {
+    const [y, m] = data.month.split("-").map(Number);
+    return new Date(y, m - 1, 1);
+  }, [data.month]);
+  const calendar = useMemo(() => buildCalendar(data.month), [data.month]);
+  const dashboard = useMemo(() => getDashboardStats(data.entries), [data.entries]);
+  const monthReport = useMemo(() => getMonthReport(data.month, data.entries), [data.month, data.entries]);
+  const trainingPlan = getTrainingForDay(dayKey, data.date, data.entries);
+  const trainingProgress = getTrainingProgress(dayKey, entry, data.date, data.entries);
+  const learningProgress = getLearningProgress(dayKey, entry);
+  const swimLevel = getSwimLevel(entry.swimDistance || 0);
+  const swimGoalPct = data.swimGoal ? Math.round(((entry.swimDistance || 0) / data.swimGoal) * 100) : 0;
+
+  const update = (changes) => {
+    setData((prev) => ({
+      ...prev,
+      entries: {
+        ...prev.entries,
+        [prev.date]: { ...normalizeEntry(prev.entries[prev.date] || emptyEntry()), ...changes },
       },
-      options: { responsive:true, maintainAspectRatio:false }
-    });
+    }));
   };
 
-  const fillPrintArea = (st) => {
-    pr.title.textContent = `Monatsbericht • ${st.monthStr}`;
-    pr.sub.textContent = `Erstellt am ${realToday} • Tage: ${st.days} • Kern: ${st.coreTotal}/${st.coreMax} (${st.corePct}%) • Extras: ${st.extrasDone}/${st.extrasTotal}`;
-    pr.summary.innerHTML =
-      `<b>Kern (Anzahl erledigt):</b> Arbeit ${st.work} • Lernen ${st.study} • Sport ${st.sport} • Freizeit ${st.leisure}<br/>` +
-      `<b>Extras:</b> ${st.extrasDone}/${st.extrasTotal}`;
+  const toggleTraining = (i) => update({ training: { ...entry.training, [i]: !entry.training[i] } });
+  const toggleLearning = (i) => update({ learning: { ...entry.learning, [i]: !entry.learning[i] } });
 
-    // table
-    pr.tableBody.innerHTML = "";
-    st.data.forEach(e => {
-      const core = (e.work?1:0)+(e.study?1:0)+(e.sport?1:0)+(e.leisure?1:0);
-      const ex = customStats(e.customTasks || []);
-      const tr = el("tr");
-      tr.innerHTML = `
-        <td class="left">${e.date}</td>
-        <td>${e.work ? "JA" : ""}</td>
-        <td>${e.study ? "JA" : ""}</td>
-        <td>${e.sport ? "JA" : ""}</td>
-        <td>${e.leisure ? "JA" : ""}</td>
-        <td>${ex.total ? `${ex.done}/${ex.total}` : ""}</td>
-        <td><b>${core}/4</b></td>
-      `;
-      pr.tableBody.appendChild(tr);
-    });
+  return (
+    <div style={{ padding: 20, color: "white", background: "#0b0f14", minHeight: "100vh", fontFamily: "Arial, sans-serif" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+        <div style={{ ...cardStyle(), marginTop: 0, background: "linear-gradient(135deg, #121923 0%, #0f2b33 100%)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 12, color: "#a5f3fc", marginBottom: 8 }}>ULTIMATE TRACKER PRO</div>
+              <h1 style={{ margin: 0, fontSize: 34 }}>🔥 Ultimate Tracker</h1>
+              <button
+                onClick={() => setData((prev) => ({
+                  ...prev,
+                  entries: {
+                    ...prev.entries,
+                    [prev.date]: { ...normalizeEntry(prev.entries[prev.date] || emptyEntry()), padel: !prev.entries?.[prev.date]?.padel },
+                  },
+                }))}
+                style={{ marginTop: 10, padding: 8, borderRadius: 10, background: "#a78bfa", color: "black" }}
+              >
+                🎾 Padel Woche: {data.entries?.[data.date]?.padel ? "AN" : "AUS"}
+              </button>
+              <p style={{ color: "#cbd5e1", marginTop: 10, marginBottom: 0 }}>Training und Lernen gemeinsam, aber klar getrennt und übersichtlich.</p>
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button onClick={() => exportPDF(data.date, dayKey, entry, data.entries)} style={buttonStyle(false)}>📄 Export PDF</button>
+              <button onClick={() => setData(initial)} style={buttonStyle(false)}>↺ Reset</button>
+            </div>
+          </div>
+        </div>
 
-    // custom details
-    pr.customDetails.innerHTML = "";
-    const daysWithExtras = st.data.filter(e => (e.customTasks||[]).length > 0);
-    if(daysWithExtras.length === 0){
-      pr.customDetails.innerHTML = `<div class="sub">Keine Custom Tasks in diesem Monat.</div>`;
-    } else {
-      daysWithExtras.forEach(e => {
-        const title = el("div", { className:"sub", innerHTML:`<b>${e.date}</b>` });
-        const ul = el("ul");
-        (e.customTasks||[]).forEach(t => ul.appendChild(el("li", { textContent: `${t.done?"✅":"☐"} ${t.text}` })));
-        pr.customDetails.appendChild(title);
-        pr.customDetails.appendChild(ul);
-      });
-    }
-  };
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginTop: 20 }}>
+          <div style={cardStyle({ marginTop: 0 })}><div style={{ color: "#94a3b8", fontSize: 14 }}>Getrackte Tage</div><div style={{ fontSize: 32, fontWeight: 700 }}>{dashboard.trackedDays}</div></div>
+          <div style={cardStyle({ marginTop: 0 })}><div style={{ color: "#94a3b8", fontSize: 14 }}>Trainingstage</div><div style={{ fontSize: 32, fontWeight: 700 }}>{dashboard.trainingDays}</div></div>
+          <div style={cardStyle({ marginTop: 0 })}><div style={{ color: "#94a3b8", fontSize: 14 }}>Lerntage</div><div style={{ fontSize: 32, fontWeight: 700 }}>{dashboard.learningDays}</div></div>
+          <div style={cardStyle({ marginTop: 0 })}><div style={{ color: "#94a3b8", fontSize: 14 }}>Streak</div><div style={{ fontSize: 32, fontWeight: 700 }}>{dashboard.streak}</div></div>
+          <div style={cardStyle({ marginTop: 0 })}><div style={{ color: "#94a3b8", fontSize: 14 }}>Ø Training</div><div style={{ fontSize: 32, fontWeight: 700 }}>{dashboard.avgTraining}%</div>{progressBar(dashboard.avgTraining)}</div>
+          <div style={cardStyle({ marginTop: 0 })}><div style={{ color: "#94a3b8", fontSize: 14 }}>Best Swim</div><div style={{ fontSize: 32, fontWeight: 700 }}>{dashboard.bestSwim}m</div>{progressBar(Math.round((dashboard.bestSwim / data.swimGoal) * 100), "#3b82f6")}</div>
+        </div>
 
-  const pdfExport = async () => {
-    const m = ui.monthSelect.value;
-    const st = calcMonthStats(m);
-    if(st.days === 0) return alert(`Noch keine Daten für ${m}.`);
+        <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 20, marginTop: 20 }}>
+          <div style={cardStyle({ marginTop: 0 })}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div>
+                <h2 style={{ margin: 0 }}>🗓️ Kalender</h2>
+                <div style={{ color: "#94a3b8", marginTop: 6 }}>{MONTHS[monthDate.getMonth()]} {monthDate.getFullYear()}</div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button style={buttonStyle(false)} onClick={() => setData((p) => ({ ...p, month: getMonthKey(shiftMonth(monthDate, -1)) }))}>←</button>
+                <button style={buttonStyle(false)} onClick={() => setData((p) => ({ ...p, month: getMonthKey(new Date()), date: getKey(new Date()) }))}>Heute</button>
+                <button style={buttonStyle(false)} onClick={() => setData((p) => ({ ...p, month: getMonthKey(shiftMonth(monthDate, 1)) }))}>→</button>
+              </div>
+            </div>
 
-    fillPrintArea(st);
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 14, fontSize: 12, color: "#cbd5e1" }}>
+              <div>🟩 Training + Lernen</div>
+              <div>🟦 Schwimmen</div>
+              <div>🟪 Lernen</div>
+              <div>🟦 Training</div>
+            </div>
 
-    // Build charts just-in-time; wait a tick so canvas sizes are ready
-    await new Promise(r => setTimeout(r, 50));
-    buildPrintCharts(st);
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8, marginTop: 16, color: "#94a3b8", fontSize: 12, textAlign: "center" }}>
+              {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((d) => <div key={d}>{d}</div>)}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8, marginTop: 8 }}>
+              {calendar.map((cell) => {
+                const cellEntry = normalizeEntry(data.entries[cell.key] || emptyEntry());
+                const cellDayKey = getDayKey(cell.key);
+                const tPct = getTrainingProgress(cellDayKey, cellEntry, cell.key, data.entries);
+                const lPct = getLearningProgress(cellDayKey, cellEntry);
+                const active = cell.key === data.date;
+                const heat = getHeatColor(tPct, lPct, cellEntry.swimDistance || 0);
+                return (
+                  <button
+                    key={cell.key}
+                    onClick={() => setData((p) => ({ ...p, date: cell.key, month: getMonthKey(parseDate(cell.key)) }))}
+                    style={{
+                      minHeight: 88,
+                      borderRadius: 16,
+                      padding: 10,
+                      border: active ? "1px solid #22d3ee" : "1px solid rgba(255,255,255,0.08)",
+                      background: heat || (cell.inMonth ? "#111827" : "#0f172a"),
+                      color: "white",
+                      textAlign: "left",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ color: cell.isToday ? "#86efac" : "white", fontWeight: 700 }}>{cell.label}</span>
+                    </div>
+                    <div style={{ marginTop: 8, fontSize: 11, color: "#e2e8f0" }}>{DAY_LABELS[cellDayKey]}</div>
+                    {(tPct > 0 || lPct > 0 || cellEntry.swimDistance > 0) && (
+                      <div style={{ marginTop: 6, fontSize: 10 }}>
+                        {tPct > 0 ? <div style={{ color: "#67e8f9" }}>T {tPct}%</div> : null}
+                        {lPct > 0 ? <div style={{ color: "#ddd6fe" }}>L {lPct}%</div> : null}
+                        {cellEntry.swimDistance > 0 ? <div style={{ color: "#bfdbfe" }}>{cellEntry.swimDistance}m</div> : null}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-    // Print
-    window.print();
-  };
+          <div style={{ display: "grid", gap: 20 }}>
+            <div style={cardStyle({ marginTop: 0 })}>
+              <h2 style={{ marginTop: 0 }}>📍 Ausgewählter Tag</h2>
+              <div style={{ color: "#cbd5e1" }}>{formatDate(data.date)}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 16 }}>
+                <div style={{ background: "#0f172a", borderRadius: 16, padding: 14 }}>
+                  <div style={{ color: "#94a3b8", fontSize: 13 }}>Training</div>
+                  <div style={{ marginTop: 6, fontWeight: 700 }}>{trainingPlan?.label || "Ruhetag"}</div>
+                  {progressBar(trainingProgress)}
+                </div>
+                <div style={{ background: "#0f172a", borderRadius: 16, padding: 14 }}>
+                  <div style={{ color: "#94a3b8", fontSize: 13 }}>Lernen</div>
+                  <div style={{ marginTop: 6, fontWeight: 700 }}>{LEARNING_DAYS[dayKey] || "Kein Lernen"}</div>
+                  {progressBar(learningProgress, "#a78bfa")}
+                </div>
+              </div>
+            </div>
 
-  // Cleanup charts after print (optional but nice)
-  window.addEventListener("afterprint", () => {
-    if(printCharts.score) { printCharts.score.destroy(); printCharts.score = null; }
-    if(printCharts.cat) { printCharts.cat.destroy(); printCharts.cat = null; }
+            <div style={cardStyle({ marginTop: 0 })}>
+              <h2 style={{ marginTop: 0 }}>🏊 Swim Level Tracking</h2>
+              {isSwimDay(dayKey) ? (
+                <>
+                  <div style={{ color: "#cbd5e1" }}>Aktuelle Distanz heute</div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="25"
+                    value={entry.swimDistance || 0}
+                    onChange={(e) => update({ swimDistance: Number(e.target.value) || 0 })}
+                    style={{ marginTop: 10, width: "100%", padding: 12, borderRadius: 12, border: "1px solid #334155", background: "#0f172a", color: "white" }}
+                  />
+                  <div style={{ marginTop: 12, color: "#94a3b8", fontSize: 13 }}>Level erreicht: <strong style={{ color: "#93c5fd" }}>{swimLevel}m</strong></div>
+                  <div style={{ marginTop: 6, color: "#94a3b8", fontSize: 13 }}>Ziel: <strong style={{ color: "#bfdbfe" }}>{data.swimGoal}m</strong></div>
+                  {progressBar(swimGoalPct, "#3b82f6")}
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                    {SWIM_LEVELS.map((level) => (
+                      <button
+                        key={level}
+                        onClick={() => update({ swimDistance: level })}
+                        style={buttonStyle((entry.swimDistance || 0) === level)}
+                      >
+                        {level}m
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div style={{ color: "#94a3b8" }}>Swim-Level Tracking erscheint an Schwimmtagen (Dienstag und Freitag).</div>
+              )}
+            </div>
+
+            <div style={cardStyle({ marginTop: 0 })}>
+              <h2 style={{ marginTop: 0 }}>📈 Monatsbericht</h2>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div><div style={{ color: "#94a3b8", fontSize: 13 }}>Getrackte Tage</div><div style={{ fontSize: 24, fontWeight: 700 }}>{monthReport.trackedDays}</div></div>
+                <div><div style={{ color: "#94a3b8", fontSize: 13 }}>Notizen</div><div style={{ fontSize: 24, fontWeight: 700 }}>{monthReport.notesCount}</div></div>
+                <div><div style={{ color: "#94a3b8", fontSize: 13 }}>Training</div><div style={{ fontSize: 24, fontWeight: 700 }}>{monthReport.trainingPercent}%</div>{progressBar(monthReport.trainingPercent)}</div>
+                <div><div style={{ color: "#94a3b8", fontSize: 13 }}>Lernen</div><div style={{ fontSize: 24, fontWeight: 700 }}>{monthReport.learningPercent}%</div>{progressBar(monthReport.learningPercent, "#a78bfa")}</div>
+                <div><div style={{ color: "#94a3b8", fontSize: 13 }}>Swim gesamt</div><div style={{ fontSize: 24, fontWeight: 700 }}>{monthReport.swimDistanceTotal}m</div></div>
+                <div><div style={{ color: "#94a3b8", fontSize: 13 }}>Bester Swim</div><div style={{ fontSize: 24, fontWeight: 700 }}>{monthReport.bestSwim}m</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginTop: 20 }}>
+          <div style={cardStyle({ marginTop: 0 })}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+              <h2 style={{ margin: 0 }}>🏋️ Training</h2>
+              <div style={{ color: "#67e8f9", fontWeight: 700 }}>{trainingProgress}%</div>
+            </div>
+            <p style={{ color: "#cbd5e1" }}>{trainingPlan?.label || "Heute kein geplantes Training"}</p>
+            {trainingPlan ? trainingPlan.tasks.map((task, i) => (
+              <label key={i} style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10, background: "#0f172a", padding: 12, borderRadius: 14 }}>
+                <input type="checkbox" checked={!!entry.training[i]} onChange={() => toggleTraining(i)} />
+                <span>{task}</span>
+              </label>
+            )) : <div style={{ background: "#0f172a", padding: 14, borderRadius: 14, color: "#94a3b8" }}>Ruhetag.</div>}
+          </div>
+
+          <div style={cardStyle({ marginTop: 0 })}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+              <h2 style={{ margin: 0 }}>🧠 Lernen</h2>
+              <div style={{ color: "#c4b5fd", fontWeight: 700 }}>{learningProgress}%</div>
+            </div>
+            <p style={{ color: "#cbd5e1" }}>{LEARNING_DAYS[dayKey] || "Heute kein Lernen geplant"}</p>
+            {LEARNING_DAYS[dayKey] ? LEARNING_TASKS.map((task, i) => (
+              <label key={i} style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10, background: "#0f172a", padding: 12, borderRadius: 14 }}>
+                <input type="checkbox" checked={!!entry.learning[i]} onChange={() => toggleLearning(i)} />
+                <span>{task}</span>
+              </label>
+            )) : <div style={{ background: "#0f172a", padding: 14, borderRadius: 14, color: "#94a3b8" }}>Kein Lernen heute.</div>}
+          </div>
+        </div>
+
+        <div style={cardStyle()}>
+          <h2 style={{ marginTop: 0 }}>📝 Tagesnotizen</h2>
+          <textarea
+            value={entry.notes}
+            onChange={(e) => update({ notes: e.target.value })}
+            placeholder="Wie lief dein Tag? Training, Lernen, Gedanken, Fortschritte ..."
+            style={{ width: "100%", minHeight: 140, background: "#0f172a", color: "white", border: "1px solid #334155", borderRadius: 16, padding: 14, fontSize: 15, boxSizing: "border-box" }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function __runTests__() {
+  const assert = (c, m) => { if (!c) throw new Error(m); };
+
+  assert(DAYS[1] === "monday", "day mapping");
+  assert(LEARNING_DAYS.monday === "Lernen", "learning day exists");
+  assert(getDayKey("2026-03-23") === "monday", "date to weekday should work");
+
+  const entry = normalizeEntry({ training: { 0: true, 1: true }, learning: { 0: true }, notes: "ok", swimDistance: 75 });
+  assert(getTrainingProgress("monday", entry, "2026-03-23", {}) === 40, "training progress should be 40");
+  assert(getLearningProgress("monday", entry) === 100, "learning should be 100 if any task done");
+  assert(getLearningProgress("tuesday", entry) === 0, "learning on non-learning day should be 0");
+  assert(getSwimLevel(25) === 25, "swim level 25");
+  assert(getSwimLevel(130) === 100, "swim level should floor to nearest milestone");
+
+  const report = getMonthReport("2026-03", {
+    "2026-03-23": entry,
+    "2026-03-24": normalizeEntry({ notes: "rest", swimDistance: 50 }),
   });
+  assert(report.trackedDays === 2, "month report tracked days");
+  assert(report.notesCount === 2, "month report notes count");
+  assert(report.swimDistanceTotal === 125, "month report swim total");
 
-  // -----------------
-  // Plan text
-  // -----------------
-  const renderPlanBox = () => {
-    ui.weeklyPlanBox.textContent =
-`🗓️ Wochenplan (fix)
+  const stats = getDashboardStats({ "2026-03-23": entry });
+  assert(stats.trackedDays === 1, "dashboard tracked days");
+  assert(stats.bestSwim === 75, "dashboard best swim");
 
-Mo: Arbeit + Lernen
-Di: Arbeit + Sport
-Mi: Arbeit + Lernen
-Do: Arbeit + Sport
-Fr: Arbeit + Freizeit (Abend frei)
-Sa: Lernen (Vormittag) + Sport (Nachmittag)
-So: Lernen (light) + Sport optional
+  const cal = buildCalendar("2026-03");
+  assert(cal.length === 42, "calendar should render 42 cells");
 
-Regeln:
-• Freizeit max. 2× pro Woche (Warnung)
-• Ausnahme-Modus entsperrt Arbeit/Lernen/Sport
-• Eigene Tasks gelten nur für den Tag, an dem du sie erstellst`;
-  };
-
-  // -----------------
-  // Clear all
-  // -----------------
-  const clearAll = () => {
-    if(!confirm("Wirklich ALLE gespeicherten Daten löschen?")) return;
-    localStorage.removeItem(STORAGE_KEY);
-    draftCustom = [];
-    activeDate = realToday;
-    buildMonthSelect();
-    loadDay();
-  };
-
-  // -----------------
-  // Wiring
-  // -----------------
-  [ui.tWork, ui.tStudy, ui.tSport, ui.tLeisure].forEach(cb => cb.addEventListener("change", renderAll));
-  ui.overrideToggle.addEventListener("change", () => { applyPlanLocks(); renderAll(); });
-
-  ui.addCustomBtn.addEventListener("click", addCustomTask);
-  ui.customInput.addEventListener("keydown", (e) => { if(e.key === "Enter") addCustomTask(); });
-
-  ui.saveBtn.addEventListener("click", saveToday);
-  ui.reportBtn.addEventListener("click", monthlyReport);
-  ui.pdfBtn.addEventListener("click", pdfExport);
-  ui.clearBtn.addEventListener("click", clearAll);
-
-  ui.monthSelect.addEventListener("change", renderAll);
-
-  ui.todayPill.style.cursor = "pointer";
-  ui.todayPill.title = "Klick: zurück zu Heute";
-  ui.todayPill.addEventListener("click", () => { activeDate = realToday; loadDay(); });
-
-  // -----------------
-  // Init
-  // -----------------
-  const init = () => {
-    activeDate = realToday;
-    renderPlanBox();
-    buildMonthSelect();
-    loadDay();
-  };
-  init();
-})();
-</script>
-</body>
-</html>
+  return "ok";
+}
 
 
